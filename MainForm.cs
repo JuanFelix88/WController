@@ -275,6 +275,7 @@ namespace WindowsController
         private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
         private Hashtable windowsToIgnore = new Hashtable(10);
         private Icon DefaultWindowIcon;
+        private bool hasAltCommandMode = false;
 
         public MainForm()
         {
@@ -312,6 +313,24 @@ namespace WindowsController
             listBox1.KeyDown += this.ListBox1_KeyDown;
 
         }
+
+        //protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        //{
+        //    if (keyData == Keys.Menu && hasAltCommandMode == true)
+        //    {
+        //        WindowItem selected = (WindowItem)listBox1.SelectedItem;
+
+        //        if (selected != null)
+        //        {
+        //            FocusWindow(selected);
+        //        }
+
+        //        this.Hide();
+        //        hasAltCommandMode = false;
+        //    }
+
+        //    return base.ProcessCmdKey(ref msg, keyData);
+        //}
 
         private Icon IconFromBytes(byte[] iconBytes)
         {
@@ -384,6 +403,18 @@ namespace WindowsController
             {
                 ShowWindow(windowToShow);
                 e.Handled = true;
+                return;
+            }
+            if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
+            {
+                WindowItem lastWindow = listBox1.Items.Cast< WindowItem>().FirstOrDefault();
+
+                if (lastWindow != null) {
+                    HideWindow(lastWindow);
+                }
+
+                FocusWindow(windowToFocusWithControl);
+                this.Hide();
                 return;
             }
             if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
@@ -610,15 +641,39 @@ namespace WindowsController
                 SetForegroundWindow(item.Handle);
         }
 
+        private void SelectNextItem()
+        {
+            if (listBox1.SelectedIndex < listBox1.Items.Count - 1)
+            {
+                listBox1.SelectedIndex++;
+            }
+            else
+            {
+                listBox1.SelectedIndex = 0; // Volta para o primeiro item
+            }
+        }
+
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID)
             {
-                this.WindowState = FormWindowState.Normal;
-                this.LoadWindowList();
-                this.listBox1.SelectedIndex = 0;
-                this.Show();
-                this.Activate();
+                if (this.Visible)
+                {
+                    SelectNextItem();
+                    hasAltCommandMode = true;
+                }
+                else
+                {
+                    Invoke(new Action(() =>
+                    {
+                        this.WindowState = FormWindowState.Normal;
+                        this.LoadWindowList();
+                        this.listBox1.SelectedIndex = 0;
+                        this.Show();
+                        this.Activate();
+                    }));
+                }
+
             }
             base.WndProc(ref m);
         }
