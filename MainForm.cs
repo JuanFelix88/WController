@@ -342,7 +342,6 @@ namespace WindowsController
 
                 string windowTitle = sb.ToString();
 
-                // Nome do processo
                 GetWindowThreadProcessId(hWnd, out uint pid);
                 string processName = "";
                 try
@@ -411,7 +410,10 @@ namespace WindowsController
 
         private void ComputeHeightSize()
         {
-            this.Height = listBox1.Items.Count * 18;
+            Action func = () => this.Height = listBox1.Items.Count * 20;
+
+            if (this.InvokeRequired) this.Invoke(func);
+            else func.Invoke();
         }
 
         private Image ResizeImage(Image image, int width, int height)
@@ -419,10 +421,10 @@ namespace WindowsController
             Bitmap destImage = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(destImage))
             {
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
-                g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.CompositingQuality = CompositingQuality.HighQuality;
 
                 g.DrawImage(image, 0, 0, width, height);
             }
