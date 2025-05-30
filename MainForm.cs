@@ -282,6 +282,7 @@ namespace WindowsController
             AccentColor = GetWindowsAccentColor();
             SecondaryColor = GetWindowsSecondaryColor();
             InitializeComponent();
+            this.Hide();
             var accentColor = GetFixedSolidColor(AccentColor);
             DefaultWindowIcon = IconFromBytes(Resources.DefaultWindow);
 
@@ -293,15 +294,15 @@ namespace WindowsController
             ComputeIgnoreWindows();
             LoadWindowList();
             RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Oemtilde);
-            this.Hide();
             //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
             //this.KeyDown += this.MainForm_KeyDown;
+
 
             this.Resize += this.MainForm_Resize;
             this.Load += this.MainForm_Load;
             this.Paint += this.MainForm_Paint;
+            this.Deactivate += this.OnDeactivate;
 
-            listBox1.Leave += this.OnLeave;
             listBox1.DoubleClick += (s, e) =>
             {
                 if (listBox1.SelectedItem is WindowItem item)
@@ -312,6 +313,11 @@ namespace WindowsController
             };
             listBox1.KeyDown += this.ListBox1_KeyDown;
 
+        }
+
+        private void OnDeactivate(object sender, EventArgs e)
+        {
+            this.Hide();
         }
 
         //protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -425,23 +431,34 @@ namespace WindowsController
             }
             if (e.Shift && e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item3)
             {
+                int i = listBox1.SelectedIndex;
                 KillWindowProcess(item3.Handle);
                 listBox1.Items.Remove(item3);
                 ComputeHeightSize();
+                ComputeLastSelectedIndex(i);
                 return;
             }
             if (e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item2)
             {
+                int i = listBox1.SelectedIndex;
                 CloseWindow(item2.Handle);
                 listBox1.Items.Remove(item2);
                 ComputeHeightSize();
+                ComputeLastSelectedIndex(i);
                 return;
             }
         }
 
+        private void ComputeLastSelectedIndex(int i)
+        {
+            if (listBox1.Items.Count == 0) return;
+
+            listBox1.SelectedIndex = i >= listBox1.Items.Count ? listBox1.Items.Count - 1 : i;
+        }
+
         private void ComputeHeightSize()
         {
-            Action func = () => this.Height = listBox1.Items.Count * 20;
+            Action func = () => this.Height = listBox1.Items.Count * 22;
 
             if (this.InvokeRequired) this.Invoke(func);
             else func.Invoke();
@@ -661,17 +678,18 @@ namespace WindowsController
                 {
                     SelectNextItem();
                     hasAltCommandMode = true;
+                    this.Activate();
                 }
                 else
                 {
-                    Invoke(new Action(() =>
-                    {
-                        this.WindowState = FormWindowState.Normal;
-                        this.LoadWindowList();
-                        this.listBox1.SelectedIndex = 0;
-                        this.Show();
-                        this.Activate();
-                    }));
+                    this.WindowState = FormWindowState.Normal;
+                    this.LoadWindowList();
+                    this.listBox1.SelectedIndex = 0;
+                    this.Show();
+                    this.Activate();
+                    this.BringToFront();
+                    this.Refresh();
+                    Application.DoEvents();
                 }
 
             }
