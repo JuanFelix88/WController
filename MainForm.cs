@@ -509,8 +509,9 @@ namespace WindowsController
 
             if (selected)
             {
-                using (Pen borderPen = new Pen(IncrementColor(TertiaryColor, 1.3f)))
+                using (Pen borderPen = new Pen(IncrementColor(TertiaryColor, 2f), 1.5f))
                 {
+                    borderPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
                     Rectangle borderRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
                     e.Graphics.DrawRectangle(borderPen, borderRect);
                 }
