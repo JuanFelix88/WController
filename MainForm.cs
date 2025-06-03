@@ -413,10 +413,11 @@ namespace WindowsController
             }
             if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
             {
-                WindowItem lastWindow = listBox1.Items.Cast< WindowItem>().FirstOrDefault();
-
-                if (lastWindow != null) {
-                    HideWindow(lastWindow);
+                foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
+                {
+                    if (windowToFocusWithControl == itemWindow) continue;
+                    if (itemWindow == null) continue;
+                    HideWindow(itemWindow);
                 }
 
                 FocusWindow(windowToFocusWithControl);
