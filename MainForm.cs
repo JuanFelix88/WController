@@ -459,7 +459,10 @@ namespace WindowsController
 
         private void ComputeHeightSize()
         {
-            Action func = () => this.Height = listBox1.Items.Count * 22;
+            int newSize = listBox1.Items.Count * 22;
+            if (newSize < 80) newSize = 80;
+
+            Action func = () => this.Height = newSize;
 
             if (this.InvokeRequired) this.Invoke(func);
             else func.Invoke();
@@ -691,7 +694,7 @@ namespace WindowsController
                     this.Activate();
                     this.BringToFront();
                     this.Refresh();
-                    Application.DoEvents();
+                    this.PerformLayout();
                 }
 
             }
