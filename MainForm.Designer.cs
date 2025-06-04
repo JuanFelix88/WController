@@ -34,6 +34,7 @@
             // 
             // listBox1
             // 
+            this.listBox1.AccessibleRole = System.Windows.Forms.AccessibleRole.MenuBar;
             this.listBox1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(30)))), ((int)(((byte)(30)))));
             this.listBox1.BorderStyle = System.Windows.Forms.BorderStyle.None;
             this.listBox1.Dock = System.Windows.Forms.DockStyle.Fill;

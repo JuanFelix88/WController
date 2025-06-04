@@ -394,6 +394,13 @@ namespace WindowsController
 
         private void ListBox1_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.KeyCode == Keys.Escape && e.Shift)
+            {
+                e.Handled = true;
+                MessageBox.Show("Program closed.", this.Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Process.GetCurrentProcess().Kill();
+                return;
+            }
             if (e.KeyCode == Keys.Escape)
             {
                 this.Hide();
@@ -413,6 +420,8 @@ namespace WindowsController
             }
             if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
             {
+                this.Hide();
+                FocusWindow(windowToFocusWithControl);
                 foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
                 {
                     if (windowToFocusWithControl == itemWindow) continue;
@@ -420,8 +429,6 @@ namespace WindowsController
                     HideWindow(itemWindow);
                 }
 
-                FocusWindow(windowToFocusWithControl);
-                this.Hide();
                 return;
             }
             if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
@@ -468,7 +475,7 @@ namespace WindowsController
             else func.Invoke();
         }
 
-        private Image ResizeImage(Image image, int width, int height)
+        private static Image ResizeImage(Image image, int width, int height)
         {
             Bitmap destImage = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(destImage))
@@ -498,7 +505,7 @@ namespace WindowsController
 
             // Exemplo: obter imagem de um dicionário externo
             int iconSize = e.Bounds.Height - 4;
-            Image icon = ResizeImage(((WindowItem)lb.Items[e.Index]).Icon, iconSize, iconSize);
+            Image icon = ((WindowItem)lb.Items[e.Index]).Icon;
 
             Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
 
@@ -709,9 +716,15 @@ namespace WindowsController
 
         class WindowItem
         {
+            public static int IconSize => 18;
             public IntPtr Handle { get; set; }
             public string Title { get; set; }
-            public Image Icon { get; set; }
+            private Image _icon;
+            public Image Icon
+            {
+                get => _icon;
+                set => _icon = ResizeImage(value, IconSize, IconSize);
+            }
 
             public override string ToString() => Title;
         }
