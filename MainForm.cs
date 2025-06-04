@@ -274,6 +274,7 @@ namespace WindowsController
         private readonly Color SecondaryColor;
         private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
         private Hashtable windowsToIgnore = new Hashtable(10);
+        private Hashtable iconsWindows = new Hashtable(150);
         private Icon DefaultWindowIcon;
         private bool hasAltCommandMode = false;
 
@@ -421,13 +422,13 @@ namespace WindowsController
             if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
             {
                 this.Hide();
-                FocusWindow(windowToFocusWithControl);
                 foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
                 {
                     if (windowToFocusWithControl == itemWindow) continue;
                     if (itemWindow == null) continue;
                     HideWindow(itemWindow);
                 }
+                FocusWindow(windowToFocusWithControl);
 
                 return;
             }
@@ -628,6 +629,21 @@ namespace WindowsController
             this.Hide();
         }
 
+        private Image GetWindowIconImageEnhanced(IntPtr hWnd)
+        {
+            if (iconsWindows.ContainsKey(hWnd))
+            {
+                return (Image)iconsWindows[hWnd];
+            }
+            else
+            {
+                Icon icon = GetWindowIcon(hWnd) ?? DefaultWindowIcon;
+                Image image = icon.ToBitmap();
+                iconsWindows.Add(hWnd, image);
+                return image;
+            }
+        }
+
         private void LoadWindowList()
         {
             listBox1.Items.Clear();
@@ -648,14 +664,9 @@ namespace WindowsController
                     if (length == 0) return true;
                     StringBuilder sb = new StringBuilder(length + 1);
                     GetWindowText(hWnd, sb, sb.Capacity);
-                    Icon icon = GetWindowIcon(hWnd);
+                    Image image = GetWindowIconImageEnhanced(hWnd);
 
-                    if (icon == null)
-                    {
-                        icon = DefaultWindowIcon;
-                    }
-
-                    listBox1.Items.Add(new WindowItem { Handle = hWnd, Title = sb.ToString(), Icon = icon.ToBitmap() });
+                    listBox1.Items.Add(new WindowItem { Handle = hWnd, Title = sb.ToString(), Icon = image });
                 }
 
                 return true;
@@ -695,13 +706,13 @@ namespace WindowsController
                 else
                 {
                     this.WindowState = FormWindowState.Normal;
+                    this.PerformLayout();
                     this.LoadWindowList();
-                    this.listBox1.SelectedIndex = 0;
+                    if (listBox1.Items.Count > 0) this.listBox1.SelectedIndex = 0;
                     this.Show();
                     this.Activate();
                     this.BringToFront();
                     this.Refresh();
-                    this.PerformLayout();
                 }
 
             }
