@@ -20,6 +20,7 @@ using System.Collections;
 using System.Windows.Forms.VisualStyles;
 using WindowsController.Properties;
 using System.IO;
+using WindowsController.Util;
 
 namespace WindowsController
 {
@@ -278,6 +279,8 @@ namespace WindowsController
         private Icon DefaultWindowIcon;
         private bool hasAltCommandMode = false;
 
+        private SearchItemsForm searchItemsForm;
+
         public MainForm()
         {
             AccentColor = GetWindowsAccentColor();
@@ -314,6 +317,7 @@ namespace WindowsController
             };
             listBox1.KeyDown += this.ListBox1_KeyDown;
 
+            searchItemsForm = new SearchItemsForm();
         }
 
         private void OnDeactivate(object sender, EventArgs e)
@@ -441,19 +445,19 @@ namespace WindowsController
             if (e.Shift && e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item3)
             {
                 int i = listBox1.SelectedIndex;
-                KillWindowProcess(item3.Handle);
                 listBox1.Items.Remove(item3);
                 ComputeHeightSize();
                 ComputeLastSelectedIndex(i);
+                KillWindowProcess(item3.Handle);
                 return;
             }
             if (e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item2)
             {
                 int i = listBox1.SelectedIndex;
-                CloseWindow(item2.Handle);
                 listBox1.Items.Remove(item2);
                 ComputeHeightSize();
                 ComputeLastSelectedIndex(i);
+                CloseWindow(item2.Handle);
                 return;
             }
         }
@@ -474,21 +478,6 @@ namespace WindowsController
 
             if (this.InvokeRequired) this.Invoke(func);
             else func.Invoke();
-        }
-
-        private static Image ResizeImage(Image image, int width, int height)
-        {
-            Bitmap destImage = new Bitmap(width, height);
-            using (Graphics g = Graphics.FromImage(destImage))
-            {
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                g.CompositingQuality = CompositingQuality.HighQuality;
-
-                g.DrawImage(image, 0, 0, width, height);
-            }
-            return destImage;
         }
 
         private void listBox1_DrawItem(object sender, DrawItemEventArgs e)
@@ -727,14 +716,13 @@ namespace WindowsController
 
         class WindowItem
         {
-            public static int IconSize => 18;
             public IntPtr Handle { get; set; }
             public string Title { get; set; }
             private Image _icon;
             public Image Icon
             {
                 get => _icon;
-                set => _icon = ResizeImage(value, IconSize, IconSize);
+                set => _icon = Resizer.ResizeImage(value, Resizer.DefaultIconViewSize, Resizer.DefaultIconViewSize);
             }
 
             public override string ToString() => Title;
