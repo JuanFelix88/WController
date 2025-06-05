@@ -38,6 +38,7 @@ namespace WindowsController
 
         const int MOD_ALT = 0x1;
         const int MOD_CONTROL = 0x2;
+        const int MOD_WIN = 0x8;
         const int WM_HOTKEY = 0x0312;
         const int HOTKEY_ID = 9000;
 
@@ -119,14 +120,14 @@ namespace WindowsController
             this.listBox1.DrawItem += this.listBox1_DrawItem;
 
 
-            RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.K);
+            RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Space);
 
             this.Resize += this.OnResize;
             this.Load += this.OnLoad;
             this.Paint += this.OnPaint;
             this.Deactivate += this.OnDeactivate;
             this.VisibleChanged += this.OnVisibleChanged;
-
+            
             listBox1.DoubleClick += (s, e) =>
             {
                 ((FileIndexed)listBox1.Items[listBox1.SelectedIndex]).Open();
@@ -168,14 +169,14 @@ namespace WindowsController
             if (e.KeyCode == Keys.Up)
             {
                 e.SuppressKeyPress = true;
-                SelectPrevItem();
+                SelectPrevItem(true);
                 return;
             }
 
             if (e.KeyCode == Keys.Down)
             {
                 e.SuppressKeyPress = true;
-                SelectNextItem();
+                SelectNextItem(true);
                 return;
             }
 
@@ -234,10 +235,10 @@ namespace WindowsController
 
         private void ComputeHeightSize()
         {
-            int newSize = listBox1.Items.Count * 22;
+            int newSize = listBox1.Items.Count * 24;
             newSize += 25;
 
-            if (newSize < 80) newSize = 80;
+            if (newSize < 120) newSize = 120;
 
             Action func = () => this.Height = newSize;
 
@@ -322,25 +323,25 @@ namespace WindowsController
             ApplyRoundedRegion(20);
         }
 
-        private void SelectPrevItem()
+        private void SelectPrevItem(bool preventWrap = false)
         {
             if (listBox1.SelectedIndex != 0)
             {
                 listBox1.SelectedIndex--;
             }
-            else if (listBox1.Items.Count > 0)
+            else if (listBox1.Items.Count > 0 && !preventWrap)
             {
                 listBox1.SelectedIndex = listBox1.Items.Count - 1;
             }
         }
 
-        private void SelectNextItem()
+        private void SelectNextItem(bool preventWrap = false)
         {
             if (listBox1.SelectedIndex < listBox1.Items.Count - 1)
             {
                 listBox1.SelectedIndex++;
             }
-            else if (listBox1.Items.Count > 0)
+            else if (listBox1.Items.Count > 0 && !preventWrap)
             {
                 listBox1.SelectedIndex = 0;
             }
@@ -365,6 +366,7 @@ namespace WindowsController
                     this.BringToFront();
                     this.Refresh();
                     this.textBox.Text = string.Empty;
+                    label1.Visible = textBox.Text.Length == 0;
                     this.textBox.Focus();
                 }
 

@@ -87,7 +87,7 @@ namespace WindowsController
                 try
                 {
                     //Util.IconHelper.GetIcon(shortcut);
-                    Image image = Util.IconHelper.GetIcon(shortcut, true).ToBitmap();
+                    Image image = Util.IconHelper.GetIcon(shortcut, false).ToBitmap();
                     files.Add(new FileIndexed 
                     { 
                         FullPath = shortcut, 
