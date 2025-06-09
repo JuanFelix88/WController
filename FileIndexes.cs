@@ -24,7 +24,7 @@ namespace WindowsController
             Task.Run(ComputeIndexes);
         }
 
-        public IEnumerable<FileIndexed> SearchFiles(string text, int take = 5)
+        public IEnumerable<FileIndexed> SearchFiles(string text, int take = 6)
         {
             if (string.IsNullOrEmpty(text))
                 return new FileIndexed[0];
@@ -32,6 +32,8 @@ namespace WindowsController
             text = Util.Text.RemoveDiacritics(text).ToLowerInvariant();
 
             var filteredFiles = files.Where(f => f.Name.ToLowerInvariant().Contains(text)).Take(100);
+
+            filteredFiles = filteredFiles.OrderBy(filteredFile => filteredFile.Name.Length);
 
             filteredFiles = filteredFiles.OrderBy(filteredFile =>
             {
@@ -81,6 +83,8 @@ namespace WindowsController
             {
                 file.Image.Dispose(); // Dispose of the old images to free resources
             }
+
+            shortcuts = shortcuts.OrderBy(shortcut => shortcut).ToList();
 
             files.Clear();
             foreach(var shortcut in shortcuts) {
