@@ -50,6 +50,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="FileIndexes.cs" />
+    <Compile Include="RoundedTextBox.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Util\Colors.cs" />
     <Compile Include="Util\IconHelper.cs" />
     <Compile Include="Util\Resizer.cs" />

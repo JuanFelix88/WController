@@ -156,12 +156,17 @@ namespace WindowsController
                 listBox1.Items.Add(shortcut);
             }
 
+            listBox1.Height = (listBox1.Items.Count * 24)+ 5;
+
             if (shortcuts.Any())
             {
                 listBox1.SelectedIndex = 0;
             }
+
             listBox1.ResumeLayout();
             ComputeHeightSize();
+            ApplyRoundedRegion(20);
+            Refresh();
         }
 
         private async void OnTextBoxKeyDown(object sender, KeyEventArgs e)
@@ -236,11 +241,15 @@ namespace WindowsController
         private void ComputeHeightSize()
         {
             int newSize = listBox1.Items.Count * 24;
-            newSize += 25;
+            newSize += 27;
+            newSize += 15;
 
             if (newSize < 120) newSize = 120;
 
-            Action func = () => this.Height = newSize;
+            Action func = () =>
+            {
+                this.Height = newSize;
+            };
 
             if (this.InvokeRequired) this.Invoke(func);
             else func.Invoke();
@@ -290,7 +299,7 @@ namespace WindowsController
             int borderThickness = 2;
             Color borderColor = SecondaryColor;
 
-            Rectangle rect = new Rectangle(0, 0, this.Width - 1, this.Height - 1);
+            Rectangle rect = new Rectangle(0, 0, this.Width - 1, this.Height - 4);
 
             using (GraphicsPath path = GetRoundedPath(rect, borderRadius))
             using (Pen pen = new Pen(borderColor, borderThickness))

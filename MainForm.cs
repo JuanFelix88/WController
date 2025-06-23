@@ -471,8 +471,8 @@ namespace WindowsController
 
         private void ComputeHeightSize()
         {
-            int newSize = listBox1.Items.Count * 22;
-            if (newSize < 80) newSize = 80;
+            int newSize = listBox1.Items.Count * 24;
+            if (newSize < 120) newSize = 120;
 
             Action func = () => this.Height = newSize;
 

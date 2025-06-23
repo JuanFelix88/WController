@@ -10,7 +10,7 @@ namespace WindowsController.Util
 {
     internal static class Resizer
     {
-        public static int DefaultIconViewSize { get; set; } = 18;
+        public static int DefaultIconViewSize { get; set; } = 24;
         public static Image ResizeImage(Image image, int width, int height)
         {
             Bitmap destImage = new Bitmap(width, height);
