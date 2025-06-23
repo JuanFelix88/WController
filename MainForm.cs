@@ -276,6 +276,7 @@ namespace WindowsController
         private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
         private Hashtable windowsToIgnore = new Hashtable(10);
         private Hashtable iconsWindows = new Hashtable(150);
+        private Hashtable windowsRenames = new Hashtable();
         private Icon DefaultWindowIcon;
         private bool hasAltCommandMode = false;
 
@@ -459,6 +460,25 @@ namespace WindowsController
                 ComputeLastSelectedIndex(i);
                 CloseWindow(item2.Handle);
                 return;
+            }
+            if (e.KeyCode == Keys.F2 && listBox1.SelectedItem is WindowItem itemForRename)
+            {
+                var renameWindowModal = new RenameWindow() { SuggestName = itemForRename.ToString() };
+
+                var renameResult = renameWindowModal.ShowDialog();
+
+                if (renameResult != DialogResult.OK) return;
+
+                if (renameWindowModal.NewName == string.Empty)
+                {
+                    windowsRenames.Remove(itemForRename.Handle);
+                }
+                else
+                { 
+                    windowsRenames[itemForRename.Handle] =  renameWindowModal.NewName;
+                }
+
+                this.LoadWindowList();
             }
         }
 
@@ -655,7 +675,10 @@ namespace WindowsController
                     GetWindowText(hWnd, sb, sb.Capacity);
                     Image image = GetWindowIconImageEnhanced(hWnd);
 
-                    listBox1.Items.Add(new WindowItem { Handle = hWnd, Title = sb.ToString(), Icon = image });
+                    string renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
+
+
+                    listBox1.Items.Add(new WindowItem { Handle = hWnd, Title = sb.ToString(), RenamedTitle = renamedTitleFetchResult, Icon = image });
                 }
 
                 return true;
@@ -718,6 +741,7 @@ namespace WindowsController
         {
             public IntPtr Handle { get; set; }
             public string Title { get; set; }
+            public string RenamedTitle { get; set; }
             private Image _icon;
             public Image Icon
             {
@@ -725,7 +749,14 @@ namespace WindowsController
                 set => _icon = Resizer.ResizeImage(value, Resizer.DefaultIconViewSize, Resizer.DefaultIconViewSize);
             }
 
-            public override string ToString() => Title;
+            public override string ToString()
+            {
+                if (!string.IsNullOrEmpty(RenamedTitle))
+                {
+                    return RenamedTitle;
+                }
+                return Title;
+            }
         }
     }
 }
