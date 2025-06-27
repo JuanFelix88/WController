@@ -18,11 +18,11 @@ using Microsoft.Win32;
 using System.Drawing.Drawing2D;
 using System.Collections;
 using System.Windows.Forms.VisualStyles;
-using WindowsController.Properties;
+using WController.Properties;
 using System.IO;
-using WindowsController.Util;
+using WController.Util;
 
-namespace WindowsController
+namespace WController
 {
     public partial class SearchItemsForm : Form
     {

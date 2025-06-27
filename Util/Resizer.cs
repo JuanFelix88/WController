@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace WindowsController.Util
+namespace WController.Util
 {
     internal static class Resizer
     {

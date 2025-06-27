@@ -6,8 +6,8 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{D788A0A2-3F41-4A58-A2E0-6BB0EECE603F}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>WindowsController</RootNamespace>
-    <AssemblyName>WindowsController</AssemblyName>
+    <RootNamespace>WController</RootNamespace>
+    <AssemblyName>WController</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>

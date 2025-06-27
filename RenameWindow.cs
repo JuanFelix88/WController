@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace WindowsController
+namespace WController
 {
     public partial class RenameWindow : Form
     {

@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 
-namespace WindowsController.Util
+namespace WController.Util
 {
     public class IconHelper
     {

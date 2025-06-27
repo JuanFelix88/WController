@@ -1,4 +1,4 @@
-﻿namespace WindowsController
+﻿namespace WController
 {
     partial class RenameWindow
     {
