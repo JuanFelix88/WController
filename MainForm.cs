@@ -1,26 +1,27 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows.Forms;
-using Microsoft.Win32;
-using System.Drawing.Drawing2D;
-using System.Collections;
 using System.Windows.Forms.VisualStyles;
 using WController.Properties;
-using System.IO;
 using WController.Util;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Header;
 
 namespace WController
 {
@@ -491,10 +492,7 @@ namespace WController
 
         private void ComputeHeightSize()
         {
-            int newSize = listBox1.Items.Count * 24;
-            if (newSize < 120) newSize = 120;
-
-            Action func = () => this.Height = newSize;
+            Action func = () => this.Height = (listBox1.Items.Count * (listBox1.ItemHeight)) + (this.Padding.Vertical);
 
             if (this.InvokeRequired) this.Invoke(func);
             else func.Invoke();
