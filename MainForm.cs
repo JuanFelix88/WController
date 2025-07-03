@@ -11,6 +11,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -223,24 +224,66 @@ namespace WController
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyIcon(IntPtr hIcon);
 
+        [DllImport("user32.dll")]
+        static extern bool IsWindow(IntPtr hWnd);
+
+        //public static Icon GetWindowIcon(IntPtr hWnd)
+        //{
+        //    if (!IsWindow(hWnd)) return null;
+
+        //    IntPtr hIcon = SendMessage(hWnd, WM_GETICON, ICON_SMALL2, 0);
+
+        //    if (hIcon == IntPtr.Zero)
+        //        hIcon = GetClassLongAuto(hWnd, GCL_HICON);
+
+        //    if (hIcon == IntPtr.Zero)
+        //        return null;
+
+        //    try
+        //    {
+        //        return Icon.FromHandle(hIcon);
+        //    }
+        //    catch
+        //    {
+        //        return null;
+        //    }
+        //}
+
         public static Icon GetWindowIcon(IntPtr hWnd)
         {
-            IntPtr hIcon = SendMessage(hWnd, WM_GETICON, ICON_SMALL2, 0);
+            if (!IsWindow(hWnd)) return null;
 
-            if (hIcon == IntPtr.Zero)
-                hIcon = GetClassLongAuto(hWnd, GCL_HICON);
+            IntPtr hIcon = SendMessage(hWnd, WM_GETICON, ICON_SMALL2, 0);
+            //if (hIcon == IntPtr.Zero)
+            //    hIcon = GetClassLongAuto(hWnd, GCL_HICON);
 
             if (hIcon == IntPtr.Zero)
                 return null;
 
             try
             {
-                return Icon.FromHandle(hIcon);
+                Icon icon = Icon.FromHandle(hIcon);
+                using (Bitmap bmp = icon.ToBitmap())
+                {
+                    var points = new[]
+                    {
+                        new Point(0, 0),
+                        new Point(bmp.Width - 1, 0),
+                        new Point(0, bmp.Height - 1),
+                        new Point(bmp.Width - 1, bmp.Height - 1),
+                        new Point(bmp.Width / 2, bmp.Height / 2)
+                    };
+
+                    foreach (var p in points)
+                    {
+                        if (bmp.GetPixel(p.X, p.Y).A > 0)
+                            return icon;
+                    }
+                }
             }
-            catch
-            {
-                return null;
-            }
+            catch { }
+
+            return null;
         }
 
         private static Color GetFixedSolidColor(Color c)
@@ -276,12 +319,14 @@ namespace WController
         private readonly Color SecondaryColor;
         private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
         private Hashtable windowsToIgnore = new Hashtable(10);
-        private Hashtable iconsWindows = new Hashtable(150);
+        private Dictionary<IntPtr, Image> iconsWindows = new Dictionary<IntPtr, Image>(400);
         private Hashtable windowsRenames = new Hashtable();
         private Icon DefaultWindowIcon;
+        private Image DefaultWindowIconImage;
         private bool hasAltCommandMode = false;
 
         private SearchItemsForm searchItemsForm;
+        private System.Timers.Timer temporaryTimerChecker = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
 
         public MainForm()
         {
@@ -291,6 +336,7 @@ namespace WController
             this.Hide();
             var accentColor = GetFixedSolidColor(AccentColor);
             DefaultWindowIcon = IconFromBytes(Resources.DefaultWindow);
+            DefaultWindowIconImage = DefaultWindowIcon.ToBitmap();
 
             this.BackColor = accentColor;
             this.listBox1.BackColor = accentColor;
@@ -319,7 +365,43 @@ namespace WController
             };
             listBox1.KeyDown += this.ListBox1_KeyDown;
 
+            temporaryTimerChecker.Enabled = true;
+            temporaryTimerChecker.AutoReset = true;
+            temporaryTimerChecker.Elapsed += this.OnTemporaryTimerCheckerElapsed;
+            temporaryTimerChecker.Start();
+
             searchItemsForm = new SearchItemsForm();
+        }
+
+        private void OnTemporaryTimerCheckerElapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            bool isChanged = false;
+
+            foreach (var hWnd in iconsWindows.Keys.ToList())
+            {
+                if (iconsWindows[hWnd] == DefaultWindowIconImage)
+                {
+                    Icon icon = GetWindowIcon(hWnd);
+                    if (icon != null)
+                    {
+                        iconsWindows[hWnd] = icon.ToBitmap();
+                        isChanged = true;
+                    }
+                }
+            }
+
+            if (isChanged == true)
+            {
+                Invoke((MethodInvoker)(() =>
+                {
+                    foreach (WindowItem item in listBox1.Items)
+                    {
+                        item.Icon = iconsWindows[item.Handle];
+                    }
+
+                    listBox1.Refresh();
+                }));
+            }
         }
 
         private void OnDeactivate(object sender, EventArgs e)
@@ -475,8 +557,8 @@ namespace WController
                     windowsRenames.Remove(itemForRename.Handle);
                 }
                 else
-                { 
-                    windowsRenames[itemForRename.Handle] =  renameWindowModal.NewName;
+                {
+                    windowsRenames[itemForRename.Handle] = renameWindowModal.NewName;
                 }
 
                 this.LoadWindowList();
@@ -644,9 +726,10 @@ namespace WController
             }
             else
             {
-                Icon icon = GetWindowIcon(hWnd) ?? DefaultWindowIcon;
-                Image image = icon.ToBitmap();
-                iconsWindows.Add(hWnd, image);
+                Icon icon = GetWindowIcon(hWnd);
+
+                Image image = icon == null ? DefaultWindowIconImage : icon.ToBitmap();
+                iconsWindows[hWnd] = image;
                 return image;
             }
         }
