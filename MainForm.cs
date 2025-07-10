@@ -225,37 +225,33 @@ namespace WController
         static extern bool DestroyIcon(IntPtr hIcon);
 
         [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         static extern bool IsWindow(IntPtr hWnd);
 
-        //public static Icon GetWindowIcon(IntPtr hWnd)
-        //{
-        //    if (!IsWindow(hWnd)) return null;
 
-        //    IntPtr hIcon = SendMessage(hWnd, WM_GETICON, ICON_SMALL2, 0);
-
-        //    if (hIcon == IntPtr.Zero)
-        //        hIcon = GetClassLongAuto(hWnd, GCL_HICON);
-
-        //    if (hIcon == IntPtr.Zero)
-        //        return null;
-
-        //    try
-        //    {
-        //        return Icon.FromHandle(hIcon);
-        //    }
-        //    catch
-        //    {
-        //        return null;
-        //    }
-        //}
+        private void ChangeOpacityImage(Image image, float modifier)
+        {
+            if (image is Bitmap bmp)
+            {
+                {
+                    for (int y = 0; y < image.Height; y++)
+                        for (int x = 0; x < image.Width; x++)
+                        {
+                            Color c = bmp.GetPixel(x, y);
+                            Color esmaecido = Color.FromArgb((int)(c.A * modifier), c.R, c.G, c.B); // 50% opacidade
+                            bmp.SetPixel(x, y, esmaecido);
+                        }
+                }
+            }
+        }
 
         public static Icon GetWindowIcon(IntPtr hWnd)
         {
             if (!IsWindow(hWnd)) return null;
 
             IntPtr hIcon = SendMessage(hWnd, WM_GETICON, ICON_SMALL2, 0);
-            //if (hIcon == IntPtr.Zero)
-            //    hIcon = GetClassLongAuto(hWnd, GCL_HICON);
+            if (hIcon == IntPtr.Zero)
+                hIcon = GetClassLongAuto(hWnd, GCL_HICON);
 
             if (hIcon == IntPtr.Zero)
                 return null;
@@ -318,15 +314,20 @@ namespace WController
         private readonly Color AccentColor;
         private readonly Color SecondaryColor;
         private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
+        private readonly Color ShortcutColor = Color.FromArgb(180, 255, 180);
         private Hashtable windowsToIgnore = new Hashtable(10);
-        private Dictionary<IntPtr, Image> iconsWindows = new Dictionary<IntPtr, Image>(400);
+        private Dictionary<IntPtr, (Image Icon, Image IconIconic)> iconsWindows = new Dictionary<IntPtr, (Image Icon, Image IconIconic)>(400);
         private Hashtable windowsRenames = new Hashtable();
+        private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
         private Icon DefaultWindowIcon;
         private Image DefaultWindowIconImage;
+        private Image DefaultWindowIconImageIconic;
         private bool hasAltCommandMode = false;
 
         private SearchItemsForm searchItemsForm;
         private System.Timers.Timer temporaryTimerChecker = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
+        private float multiplierOpacityDecrement = 0.8f;
+        private Font shortcutFont = new Font("Consolas", 10, FontStyle.Underline);
 
         public MainForm()
         {
@@ -337,11 +338,16 @@ namespace WController
             var accentColor = GetFixedSolidColor(AccentColor);
             DefaultWindowIcon = IconFromBytes(Resources.DefaultWindow);
             DefaultWindowIconImage = DefaultWindowIcon.ToBitmap();
+            DefaultWindowIconImageIconic = DefaultWindowIcon.ToBitmap();
+            ChangeOpacityImage(DefaultWindowIconImageIconic, multiplierOpacityDecrement - 0.2f);
+
+            typeof(Control).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(listBox1, true, null);
+
 
             this.BackColor = accentColor;
             this.listBox1.BackColor = accentColor;
             listBox1.DrawMode = DrawMode.OwnerDrawFixed;
-            this.listBox1.DrawItem += this.listBox1_DrawItem;
+            this.listBox1.DrawItem += this.OnListBox1DrawItem;
 
             ComputeIgnoreWindows();
             LoadWindowList();
@@ -363,7 +369,7 @@ namespace WController
                     this.Hide();
                 }
             };
-            listBox1.KeyDown += this.ListBox1_KeyDown;
+            listBox1.KeyDown += this.OnListBox1KeyDown;
 
             temporaryTimerChecker.Enabled = true;
             temporaryTimerChecker.AutoReset = true;
@@ -379,12 +385,16 @@ namespace WController
 
             foreach (var hWnd in iconsWindows.Keys.ToList())
             {
-                if (iconsWindows[hWnd] == DefaultWindowIconImage)
+                if (iconsWindows[hWnd].Icon == DefaultWindowIconImage)
                 {
                     Icon icon = GetWindowIcon(hWnd);
                     if (icon != null)
                     {
-                        iconsWindows[hWnd] = icon.ToBitmap();
+                        Image imageIcon = icon.ToBitmap();
+                        Image imageIconIconic = icon.ToBitmap();
+                        ChangeOpacityImage(imageIconIconic, multiplierOpacityDecrement - 0.2f);
+
+                        iconsWindows[hWnd] = (imageIcon, imageIconIconic);
                         isChanged = true;
                     }
                 }
@@ -396,7 +406,8 @@ namespace WController
                 {
                     foreach (WindowItem item in listBox1.Items)
                     {
-                        item.Icon = iconsWindows[item.Handle];
+                        item.Icon = iconsWindows[item.Handle].Icon;
+                        item.IconIconic = iconsWindows[item.Handle].IconIconic;
                     }
 
                     listBox1.Refresh();
@@ -481,7 +492,7 @@ namespace WController
             }, IntPtr.Zero);
         }
 
-        private void ListBox1_KeyDown(object sender, KeyEventArgs e)
+        private void OnListBox1KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape && e.Shift)
             {
@@ -497,12 +508,19 @@ namespace WController
             }
             if (e.KeyCode == Keys.Left && listBox1.SelectedItem is WindowItem windowToHide)
             {
+                int i = listBox1.SelectedIndex;
                 HideWindow(windowToHide);
+                listBox1.Items.Remove(windowToHide);
+                ComputeLastSelectedIndex(i);
+
+                windowToHide.IsIconic = true;
+                listBox1.Items.Add(windowToHide);
                 e.Handled = true;
                 return;
             }
             if (e.KeyCode == Keys.Right && listBox1.SelectedItem is WindowItem windowToShow)
             {
+                windowToShow.IsIconic = false;
                 ShowWindow(windowToShow);
                 e.Handled = true;
                 return;
@@ -514,6 +532,7 @@ namespace WController
                 {
                     if (windowToFocusWithControl == itemWindow) continue;
                     if (itemWindow == null) continue;
+                    if (itemWindow.IsIconic) continue;
                     HideWindow(itemWindow);
                 }
                 FocusWindow(windowToFocusWithControl);
@@ -546,7 +565,12 @@ namespace WController
             }
             if (e.KeyCode == Keys.F2 && listBox1.SelectedItem is WindowItem itemForRename)
             {
-                var renameWindowModal = new RenameWindow() { SuggestName = itemForRename.ToString() };
+                var renameWindowModal = new RenameWindow()
+                {
+                    SuggestName = itemForRename.ToStringWithoutShortcut(),
+                    IsOriginalSuggestName = itemForRename.IsOriginalTitle,
+                    SuggestShortcut = itemForRename.Shortcut
+                };
 
                 var renameResult = renameWindowModal.ShowDialog();
 
@@ -559,6 +583,15 @@ namespace WController
                 else
                 {
                     windowsRenames[itemForRename.Handle] = renameWindowModal.NewName;
+                }
+
+                if (string.IsNullOrEmpty(renameWindowModal.Shortcut))
+                {
+                    windowsShortcuts.Remove(itemForRename.Handle);
+                }
+                else
+                {
+                    windowsShortcuts[itemForRename.Handle] = renameWindowModal.Shortcut;
                 }
 
                 this.LoadWindowList();
@@ -580,22 +613,33 @@ namespace WController
             else func.Invoke();
         }
 
-        private void listBox1_DrawItem(object sender, DrawItemEventArgs e)
+        private void OnListBox1DrawItem(object sender, DrawItemEventArgs e)
         {
             if (e.Index < 0) return;
-
+            e.DrawBackground();
             ListBox lb = (ListBox)sender;
-            string text = lb.Items[e.Index].ToString();
+            WindowItem item = (WindowItem)lb.Items[e.Index];
+            string text = item.ToStringWithoutShortcut();
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
 
-            Color backColor = selected ? TertiaryColor : lb.BackColor;
+
+            Color selectedColor = TertiaryColor;
             Color foreColor = selected ? Color.White : lb.ForeColor;
+            Color shortcutColor = ShortcutColor;
+
+            if (item.IsIconic)
+            {
+                foreColor = IncrementColor(foreColor, multiplierOpacityDecrement);
+                shortcutColor = IncrementColor(shortcutColor, multiplierOpacityDecrement);
+                selectedColor = IncrementColor(selectedColor, multiplierOpacityDecrement);
+            }
+
+            Color backColor = selected ? selectedColor : lb.BackColor;
 
             e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
 
-            // Exemplo: obter imagem de um dicionário externo
             int iconSize = e.Bounds.Height - 4;
-            Image icon = ((WindowItem)lb.Items[e.Index]).Icon;
+            Image icon = ((WindowItem)lb.Items[e.Index]).OutIcon;
 
             Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
 
@@ -604,13 +648,21 @@ namespace WController
 
             int textX = iconRect.Right + 4;
 
+            if (!string.IsNullOrEmpty(item.Shortcut))
+            {
+                Rectangle shortRect = new Rectangle(textX, e.Bounds.Y, 15, e.Bounds.Height);
+                TextRenderer.DrawText(e.Graphics, item.Shortcut, shortcutFont, shortRect, shortcutColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+
+                textX += 12;
+            }
+
             Rectangle textRect = new Rectangle(textX, e.Bounds.Y, e.Bounds.Width - textX, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, text, lb.Font, textRect, foreColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
             if (selected)
             {
-                using (Pen borderPen = new Pen(IncrementColor(TertiaryColor, 2f), 1.5f))
+                using (Pen borderPen = new Pen(IncrementColor(selectedColor, 2f), 1.5f))
                 {
                     borderPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
                     Rectangle borderRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
@@ -718,19 +770,25 @@ namespace WController
             this.Hide();
         }
 
-        private Image GetWindowIconImageEnhanced(IntPtr hWnd)
+        private (Image Icon, Image IconIconic) GetWindowIconImageEnhanced(IntPtr hWnd)
         {
             if (iconsWindows.ContainsKey(hWnd))
             {
-                return (Image)iconsWindows[hWnd];
+                return iconsWindows[hWnd];
             }
             else
             {
                 Icon icon = GetWindowIcon(hWnd);
 
                 Image image = icon == null ? DefaultWindowIconImage : icon.ToBitmap();
-                iconsWindows[hWnd] = image;
-                return image;
+                Image imageIconic = icon == null ? DefaultWindowIconImageIconic : icon.ToBitmap();
+
+                if (imageIconic != DefaultWindowIconImageIconic)
+                {
+                    ChangeOpacityImage(imageIconic, multiplierOpacityDecrement - 0.2f);
+                }
+                iconsWindows[hWnd] = (image, imageIconic);
+                return (image, imageIconic);
             }
         }
 
@@ -748,18 +806,37 @@ namespace WController
                     return true;
                 }
 
+                if (!IsWindow(hWnd))
+                {
+                    return true;
+                }
+
                 if (IsWindowVisible(hWnd))
                 {
                     int length = GetWindowTextLength(hWnd);
                     if (length == 0) return true;
                     StringBuilder sb = new StringBuilder(length + 1);
                     GetWindowText(hWnd, sb, sb.Capacity);
-                    Image image = GetWindowIconImageEnhanced(hWnd);
+                    var images = GetWindowIconImageEnhanced(hWnd);
 
                     string renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
+                    string shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
 
+                    if (sb.ToString().Contains("Configura"))
+                    {
 
-                    listBox1.Items.Add(new WindowItem { Handle = hWnd, Title = sb.ToString(), RenamedTitle = renamedTitleFetchResult, Icon = image });
+                    }
+
+                    listBox1.Items.Add(new WindowItem
+                    {
+                        Handle = hWnd,
+                        Title = sb.ToString(),
+                        RenamedTitle = renamedTitleFetchResult,
+                        Icon = images.Icon,
+                        IconIconic = images.IconIconic,
+                        IsIconic = IsIconic(hWnd),
+                        Shortcut = shortcut ?? string.Empty
+                    });
                 }
 
                 return true;
@@ -798,17 +875,16 @@ namespace WController
                 }
                 else
                 {
-                    this.WindowState = FormWindowState.Normal;
                     this.PerformLayout();
                     this.LoadWindowList();
                     if (listBox1.Items.Count > 0) this.listBox1.SelectedIndex = 0;
                     this.Show();
                     this.Activate();
                     this.BringToFront();
-                    this.Refresh();
+                    Task.Delay(20).ContinueWith(t => Invoke(new Action(() => this.Invalidate())));
                 }
-
             }
+
             base.WndProc(ref m);
         }
 
@@ -824,19 +900,36 @@ namespace WController
             public string Title { get; set; }
             public string RenamedTitle { get; set; }
             private Image _icon;
+            private Image _iconIconic;
+            public string Shortcut { get; set; } = string.Empty;
+            public bool IsIconic { get; set; }
             public Image Icon
             {
                 get => _icon;
                 set => _icon = Resizer.ResizeImage(value, Resizer.DefaultIconViewSize, Resizer.DefaultIconViewSize);
             }
+            public Image IconIconic
+            {
+                get => _iconIconic;
+                set => _iconIconic = Resizer.ResizeImage(value, Resizer.DefaultIconViewSize, Resizer.DefaultIconViewSize);
+            }
+            public Image OutIcon => IsIconic ? IconIconic : Icon;
+            public bool IsOriginalTitle => string.IsNullOrEmpty(RenamedTitle) && string.IsNullOrEmpty(Shortcut);
+            public string ToStringWithoutShortcut()
+            {
+                return !string.IsNullOrEmpty(RenamedTitle) ? RenamedTitle : Title;
+            }
 
             public override string ToString()
             {
-                if (!string.IsNullOrEmpty(RenamedTitle))
+                string outTitle = !string.IsNullOrEmpty(RenamedTitle) ? RenamedTitle : Title;
+
+                if (!string.IsNullOrEmpty(Shortcut))
                 {
-                    return RenamedTitle;
+                    return $"{Shortcut}{outTitle}";
                 }
-                return Title;
+
+                return outTitle;
             }
         }
     }
