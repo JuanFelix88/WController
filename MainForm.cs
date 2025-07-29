@@ -454,6 +454,9 @@ namespace WController
                 if (hWnd == this.Handle || hWnd == IntPtr.Zero)
                     return true;
 
+
+                if (GetTypeWindow(this.Handle) == 0) return true;
+
                 if (!IsWindowVisible(hWnd)) return true;
 
                 string className = "";
@@ -835,6 +838,28 @@ namespace WController
             }
         }
 
+        [DllImport("user32.dll")]
+        static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+        const int GWL_EXSTYLE = -20;
+        const long WS_EX_TOOLWINDOW = 0x00000080;
+        const long WS_EX_APPWINDOW = 0x00040000;
+        const long WS_EX_TOPMOST = 0x00000008;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns>0 - invalid, 1 - normal, 2 - topmost</returns>
+        static int GetTypeWindow(IntPtr hWnd)
+        {
+            long exStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE).ToInt64();
+            //if ((exStyle & WS_EX_TOOLWINDOW) != 0) return 0;
+            //if ((exStyle & WS_EX_APPWINDOW) != 0) return 0;
+            if ((exStyle & WS_EX_TOPMOST) != 0) return 2;
+            return 1;
+        }
+
+     
         private void LoadWindowList()
         {
             listBox1.Items.Clear();
@@ -844,6 +869,10 @@ namespace WController
                 if (hWnd == this.Handle || hWnd == IntPtr.Zero)
                     return true;
 
+                var typeWindow = GetTypeWindow(hWnd);
+
+                if (typeWindow == 0) return true;
+
                 if (windowsToIgnore.Contains(hWnd))
                 {
                     return true;
@@ -852,7 +881,7 @@ namespace WController
                 if (!IsWindow(hWnd))
                 {
                     return true;
-                }
+                }   
 
                 if (IsWindowVisible(hWnd))
                 {
@@ -865,14 +894,10 @@ namespace WController
                     string renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
                     string shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
 
-                    if (sb.ToString().Contains("Configura"))
-                    {
-
-                    }
-
                     listBox1.Items.Add(new WindowItem
                     {
                         Handle = hWnd,
+                        TypeWindow = typeWindow,
                         Title = sb.ToString(),
                         RenamedTitle = renamedTitleFetchResult,
                         Icon = images.Icon,
@@ -892,7 +917,8 @@ namespace WController
 
                 listBox1.Items.Clear();
                 list
-                    .OrderByDescending(item => CountWindowReferences(activeWindow, item))
+                    .OrderBy(item => item.TypeWindow)
+                    .ThenByDescending(item => CountWindowReferences(activeWindow, item))
                     .ToList()
                     .ForEach(item => listBox1.Items.Add(item));
             }
@@ -954,6 +980,7 @@ namespace WController
         {
             public IntPtr Handle { get; set; }
             public string Title { get; set; }
+            public int TypeWindow { get; set; }
             public string RenamedTitle { get; set; }
             private Image _icon;
             private Image _iconIconic;
