@@ -319,6 +319,7 @@ namespace WController
         private Dictionary<IntPtr, (Image Icon, Image IconIconic)> iconsWindows = new Dictionary<IntPtr, (Image Icon, Image IconIconic)>(400);
         private Hashtable windowsRenames = new Hashtable();
         private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
+        private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
         private Icon DefaultWindowIcon;
         private Image DefaultWindowIconImage;
         private Image DefaultWindowIconImageIconic;
@@ -492,6 +493,39 @@ namespace WController
             }, IntPtr.Zero);
         }
 
+        private void IncrementCount(WindowItem activeWindow, WindowItem targetWindow)
+        {
+            if (windowsReferences.TryGetValue((activeWindow.Handle, targetWindow.Handle), out int count))
+            {
+                Task.Run(() =>
+                {
+                    lock (windowsReferences)
+                    {
+                        windowsReferences[(activeWindow.Handle, targetWindow.Handle)] = count + 1;
+                    }
+                });
+            }
+            else
+            {
+                Task.Run(() =>
+                {
+                    lock (windowsReferences)
+                    {
+                        windowsReferences[(activeWindow.Handle, targetWindow.Handle)] = 1;
+                    }
+                });
+            }
+        }
+
+        private int CountWindowReferences(WindowItem activeWindow, WindowItem targetWindow)
+        {
+            if (activeWindow == targetWindow) return int.MaxValue;
+            if (!windowsReferences.TryGetValue((activeWindow.Handle, targetWindow.Handle), out int count))
+                return 0;
+
+            return count;
+        }
+
         private void OnListBox1KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape && e.Shift)
@@ -537,11 +571,21 @@ namespace WController
                 }
                 FocusWindow(windowToFocusWithControl);
 
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], windowToFocusWithControl);
+                }
+
                 return;
             }
             if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
             {
                 FocusWindow(item);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], item);
+                }
+
                 this.Hide();
                 return;
             }
@@ -621,7 +665,6 @@ namespace WController
             WindowItem item = (WindowItem)lb.Items[e.Index];
             string text = item.ToStringWithoutShortcut();
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-
 
             Color selectedColor = TertiaryColor;
             Color foreColor = selected ? Color.White : lb.ForeColor;
@@ -841,6 +884,19 @@ namespace WController
 
                 return true;
             }, IntPtr.Zero);
+
+            if (listBox1.Items.Count > 1)
+            {
+                var list = listBox1.Items.Cast<WindowItem>().ToList();
+                var activeWindow = (WindowItem)listBox1.Items[0];
+
+                listBox1.Items.Clear();
+                list
+                    .OrderByDescending(item => CountWindowReferences(activeWindow, item))
+                    .ToList()
+                    .ForEach(item => listBox1.Items.Add(item));
+            }
+
             listBox1.ResumeLayout();
             ComputeHeightSize();
         }
