@@ -2,6 +2,12 @@
 
 A powerful Windows desktop application for advanced window management and control. WController (formerly WindowsController) provides enhanced window manipulation capabilities with a modern, intuitive interface.
 
+Preview:
+<video width="640" height="360" controls>
+  <source src="./Resources/example-01.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 ## 🌟 Features
 
 ### Core Functionality
