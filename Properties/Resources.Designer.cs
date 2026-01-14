@@ -10,9 +10,8 @@
 
 namespace WController.Properties {
     using System;
-    using System.Drawing;
-
-
+    
+    
     /// <summary>
     ///   Uma classe de recurso de tipo de alta segurança, para pesquisar cadeias de caracteres localizadas etc.
     /// </summary>
@@ -67,8 +66,17 @@ namespace WController.Properties {
         internal static byte[] DefaultWindow {
             get {
                 object obj = ResourceManager.GetObject("DefaultWindow", resourceCulture);
-
-                return (byte[])obj;
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Consulta um recurso localizado do tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap ProgramIcon {
+            get {
+                object obj = ResourceManager.GetObject("ProgramIcon", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
             }
         }
     }

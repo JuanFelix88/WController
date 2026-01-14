@@ -32,7 +32,7 @@ namespace WController
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(SearchItemsForm));
             this.listBox1 = new System.Windows.Forms.ListBox();
-            this.label1 = new System.Windows.Forms.Label();
+            this.lbPlaceHolder = new System.Windows.Forms.Label();
             this.textBox = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
@@ -49,20 +49,20 @@ namespace WController
             this.listBox1.Location = new System.Drawing.Point(8, 32);
             this.listBox1.Margin = new System.Windows.Forms.Padding(0);
             this.listBox1.Name = "listBox1";
-            this.listBox1.Size = new System.Drawing.Size(405, 40);
+            this.listBox1.Size = new System.Drawing.Size(496, 40);
             this.listBox1.TabIndex = 0;
             // 
-            // label1
+            // lbPlaceHolder
             // 
-            this.label1.AutoSize = true;
-            this.label1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
-            this.label1.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label1.ForeColor = System.Drawing.SystemColors.ControlDarkDark;
-            this.label1.Location = new System.Drawing.Point(17, 9);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(135, 18);
-            this.label1.TabIndex = 2;
-            this.label1.Text = "Search programs...";
+            this.lbPlaceHolder.AutoSize = true;
+            this.lbPlaceHolder.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
+            this.lbPlaceHolder.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbPlaceHolder.ForeColor = System.Drawing.SystemColors.ControlDarkDark;
+            this.lbPlaceHolder.Location = new System.Drawing.Point(17, 9);
+            this.lbPlaceHolder.Name = "lbPlaceHolder";
+            this.lbPlaceHolder.Size = new System.Drawing.Size(135, 18);
+            this.lbPlaceHolder.TabIndex = 2;
+            this.lbPlaceHolder.Text = "Search programs...";
             // 
             // textBox
             // 
@@ -74,7 +74,7 @@ namespace WController
             this.textBox.Location = new System.Drawing.Point(8, 8);
             this.textBox.Margin = new System.Windows.Forms.Padding(3, 3, 3, 8);
             this.textBox.Name = "textBox";
-            this.textBox.Size = new System.Drawing.Size(405, 24);
+            this.textBox.Size = new System.Drawing.Size(496, 24);
             this.textBox.TabIndex = 1;
             // 
             // SearchItemsForm
@@ -82,9 +82,9 @@ namespace WController
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(30)))), ((int)(((byte)(30)))));
-            this.ClientSize = new System.Drawing.Size(421, 312);
+            this.ClientSize = new System.Drawing.Size(512, 312);
             this.ControlBox = false;
-            this.Controls.Add(this.label1);
+            this.Controls.Add(this.lbPlaceHolder);
             this.Controls.Add(this.listBox1);
             this.Controls.Add(this.textBox);
             this.DoubleBuffered = true;
@@ -104,7 +104,7 @@ namespace WController
         #endregion
 
         private System.Windows.Forms.ListBox listBox1;
-        private System.Windows.Forms.Label label1;
+        private System.Windows.Forms.Label lbPlaceHolder;
         private TextBox textBox;
     }
 }

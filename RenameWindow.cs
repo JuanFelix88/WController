@@ -1,79 +1,71 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace WController
+namespace WController;
+
+public partial class RenameWindow : Form
 {
-    public partial class RenameWindow : Form
+    public bool IsOriginalSuggestName { get; set; } = false;
+    public string SuggestName { get; set; } = string.Empty;
+    public string SuggestShortcut { get; set; } = string.Empty;
+    public string NewName => textBox.Text;
+    public string Shortcut => textBoxShortcut.Text.ToUpper();
+    public RenameWindow()
     {
-        public bool IsOriginalSuggestName { get; set; } = false;
-        public string SuggestName { get; set; } = string.Empty;
-        public string SuggestShortcut { get; set; } = string.Empty;
-        public string NewName => textBox.Text;
-        public string Shortcut => textBoxShortcut.Text.ToUpper();
-        public RenameWindow()
-        {
-            InitializeComponent();
+        InitializeComponent();
 
-            this.KeyPreview = true;
-            this.KeyDown += this.OnKeyDown;
-            this.Load += this.OnLoad;
-            this.FormClosing += this.OnFormClosing;
-            textBox.TextChanged += this.OnTextChanged;
-        }
-        private void OnLoad(object sender, EventArgs e)
-        {
-            textBox.Text = SuggestName;
-            textBoxShortcut.Text = SuggestShortcut;
-        }
+        this.KeyPreview = true;
+        this.KeyDown += this.OnKeyDown;
+        this.Load += this.OnLoad;
+        this.FormClosing += this.OnFormClosing;
+        textBox.TextChanged += this.OnTextChanged;
+    }
+    private void OnLoad(object sender, EventArgs e)
+    {
+        textBox.Text = SuggestName;
+        textBoxShortcut.Text = SuggestShortcut;
+    }
 
-        private void OnFormClosing(object sender, FormClosingEventArgs e)
+    private void OnFormClosing(object sender, FormClosingEventArgs e)
+    {
+        if (SuggestName == NewName && IsOriginalSuggestName)
         {
-            if (SuggestName == NewName && IsOriginalSuggestName)
-            {
-                textBox.Text = string.Empty;
-            }
+            textBox.Text = string.Empty;
         }
+    }
 
-        private void OnTextChanged(object sender, EventArgs e)
+    private void OnTextChanged(object sender, EventArgs e)
+    {
+        if (textBox.Text == SuggestName && IsOriginalSuggestName)
         {
-            if (textBox.Text == SuggestName && IsOriginalSuggestName)
-            {
-                buttonOk.Text = "Keep name";
-            }
-            else if (textBox.Text.Length > 0)
-            {
-                buttonOk.Text = "Apply";
-            }
-            else
-            {
-                buttonOk.Text = "Remove name";
-            }
+            buttonOk.Text = "Keep name";
         }
-
-        private void OnKeyDown(object sender, KeyEventArgs e)
+        else if (textBox.Text.Length > 0)
         {
-            if (e.KeyCode == Keys.Enter)
-            {
-                this.OnOkClick(sender, e);
-            }
-            else if (e.KeyCode == Keys.Escape)
-            {
-                this.DialogResult = DialogResult.Cancel;
-                this.Close();
-            }
+            buttonOk.Text = "Apply";
         }
-
-        private void OnOkClick(object sender, EventArgs e)
+        else
         {
-            this.DialogResult = DialogResult.OK;
+            buttonOk.Text = "Remove name";
+        }
+    }
+
+    private void OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            this.OnOkClick(sender, e);
+        }
+        else if (e.KeyCode == Keys.Escape)
+        {
+            this.DialogResult = DialogResult.Cancel;
             this.Close();
         }
+    }
+
+    private void OnOkClick(object sender, EventArgs e)
+    {
+        this.DialogResult = DialogResult.OK;
+        this.Close();
     }
 }

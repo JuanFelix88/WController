@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-class ShowDesktopHelper
+internal class ShowDesktopHelper
 {
     const byte VK_LWIN = 0x5B;
     const byte D = 0x44;

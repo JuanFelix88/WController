@@ -6,12 +6,10 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using WController.External;
-using WController.Util;
 
-namespace WController;
+namespace WController.Forms;
 
-public partial class SearchItemsForm : Form
+public partial class PluginForm : Form
 {
     protected override CreateParams CreateParams
     {
@@ -56,7 +54,6 @@ public partial class SearchItemsForm : Form
         }
     }
 
-
     private static Color GetFixedSolidColor(Color c)
     {
         var alphaDiff = 255 - c.A;
@@ -90,10 +87,12 @@ public partial class SearchItemsForm : Form
     private readonly Color SecondaryColor;
     private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
     private readonly FileIndexes fileIndexes = new FileIndexes();
-    private readonly PluginManager pluginManager = new();
+    private External.Plugin plugin;
 
-    public SearchItemsForm()
+    public PluginForm(External.Plugin plugin)
     {
+        this.plugin = plugin;
+
         AccentColor = GetWindowsAccentColor();
         SecondaryColor = GetWindowsSecondaryColor();
         InitializeComponent();
@@ -103,10 +102,9 @@ public partial class SearchItemsForm : Form
         textBox.KeyDown += this.OnTextBoxKeyDown;
 
         this.BackColor = accentColor;
-        this.listBox1.BackColor = accentColor;
-        listBox1.DrawMode = DrawMode.OwnerDrawFixed;
-        this.listBox1.DrawItem += this.listBox1_DrawItem;
-
+        this.listBox.BackColor = accentColor;
+        listBox.DrawMode = DrawMode.OwnerDrawFixed;
+        this.listBox.DrawItem += this.OnListBoxDrawItem;
 
         RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Space);
 
@@ -116,105 +114,22 @@ public partial class SearchItemsForm : Form
         this.Deactivate += this.OnDeactivate;
         this.VisibleChanged += this.OnVisibleChanged;
 
-        listBox1.DoubleClick += (s, e) =>
+        listBox.DoubleClick += (s, e) =>
         {
-            ((ItemSelectable)listBox1.Items[listBox1.SelectedIndex]).Open();
+            ((FileIndexed)listBox.Items[listBox.SelectedIndex]).Open();
         };
 
-        listBox1.KeyDown += this.OnListBoxKeyDown;
+        listBox.KeyDown += this.OnListBoxKeyDown;
         ComputeHeightSize();
-
-        pluginManager.PluginCalledByShortcut += this.OnPluginCalledByShortcut;
-    }
-
-    private void OnPluginCalledByShortcut(Plugin plugin)
-    {
-        if (!this.Visible) this.Show();
-        this.Focus();
-        this.textBox.Text = plugin.Shortcut + ": ";
-        textBox.Focus();
-        textBox.Select(textBox.Text.Length, 0);
-        SearchWithText(textBox.Text);
-        lbPlaceHolder.Visible = false;
-    }
-
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
-    {
-        if (keyData == Keys.Tab && textBox.Focused && !textBox.Text.Contains(" "))
-        {
-            textBox.Text += ": ";
-            textBox.Focus();
-            textBox.Select(textBox.Text.Length, 0);
-            SearchWithText(textBox.Text);
-            lbPlaceHolder.Visible = textBox.Text.Length == 0;
-            return true;
-        }
-
-        return base.ProcessCmdKey(ref msg, keyData);
+        this.plugin = plugin;
     }
 
     private void OnVisibleChanged(object sender, EventArgs e)
     {
         if (!this.Visible)
         {
-            listBox1.Items.Clear();
+            listBox.Items.Clear();
         }
-    }
-
-    private void SearchWithText(string text)
-    {
-        var pluginSearch = pluginManager.ExtractPluginSearch(text);
-
-        // plugins:
-        if (pluginSearch is not null)
-        {
-            var (plugin, textSearch) = pluginSearch.Value;
-            var pluginShortcuts = plugin.DispatchLoadItems(textSearch);
-
-            textBox.ForeColor = Color.FromArgb(125, 255, 186);
-
-            listBox1.SuspendLayout();
-            listBox1.Items.Clear();
-
-            foreach (var shortcut in pluginShortcuts)
-                listBox1.Items.Add(shortcut);
-
-            listBox1.Height = (listBox1.Items.Count * 24) + 5;
-
-            if (listBox1.Items.Count > 0)
-            {
-                listBox1.SelectedIndex = 0;
-            }
-
-            listBox1.ResumeLayout();
-            ComputeHeightSize();
-            ApplyRoundedRegion(20);
-            Refresh();
-            return;
-        }
-
-        // file search (default):
-        textBox.ForeColor = Color.White;
-        var shortcuts = fileIndexes.SearchFiles(text);
-        listBox1.SuspendLayout();
-        listBox1.Items.Clear();
-
-        foreach (var shortcut in shortcuts)
-        {
-            listBox1.Items.Add(shortcut);
-        }
-
-        listBox1.Height = (listBox1.Items.Count * 24) + 5;
-
-        if (shortcuts.Any())
-        {
-            listBox1.SelectedIndex = 0;
-        }
-
-        listBox1.ResumeLayout();
-        ComputeHeightSize();
-        ApplyRoundedRegion(20);
-        Refresh();
     }
 
     private async void OnTextBoxKeyDown(object sender, KeyEventArgs e)
@@ -239,18 +154,10 @@ public partial class SearchItemsForm : Form
             return;
         }
 
-        if (e.KeyCode == Keys.Enter && listBox1.Items[listBox1.SelectedIndex] is FileIndexed fileIndexed)
+        if (e.KeyCode == Keys.Enter)
         {
             e.SuppressKeyPress = true;
-            fileIndexed.Open();
-            this.Hide();
-            return;
-        }
-
-        if (e.KeyCode == Keys.Enter && listBox1.Items[listBox1.SelectedIndex] is PluginItem pluginItem)
-        {
-            e.SuppressKeyPress = true;
-            pluginItem.Open();
+            ((FileIndexed)listBox.Items[listBox.SelectedIndex]).Open();
             this.Hide();
             return;
         }
@@ -262,8 +169,8 @@ public partial class SearchItemsForm : Form
         }
 
         await Task.Delay(10);
-        SearchWithText(textBox.Text);
-        lbPlaceHolder.Visible = textBox.Text.Length == 0;
+        LoadItemsByTextSearch(textBox.Text);
+        label1.Visible = textBox.Text.Length == 0;
     }
 
     private void OnDeactivate(object sender, EventArgs e)
@@ -285,9 +192,9 @@ public partial class SearchItemsForm : Form
             this.Hide();
             return;
         }
-        if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is FileIndexed item)
+        if (e.KeyCode == Keys.Enter && listBox.SelectedItem is External.PluginItem pluginItem)
         {
-            item.Open();
+            plugin.DispatchSelectItem(pluginItem);
             this.Hide();
             return;
         }
@@ -296,7 +203,7 @@ public partial class SearchItemsForm : Form
 
     private void ComputeHeightSize()
     {
-        int newSize = listBox1.Items.Count * 24;
+        int newSize = listBox.Items.Count * 24;
         newSize += 27;
         newSize += 15;
 
@@ -311,7 +218,7 @@ public partial class SearchItemsForm : Form
         else func.Invoke();
     }
 
-    private void listBox1_DrawItem(object sender, DrawItemEventArgs e)
+    private void OnListBoxDrawItem(object sender, DrawItemEventArgs e)
     {
         if (e.Index < 0) return;
 
@@ -325,7 +232,7 @@ public partial class SearchItemsForm : Form
         e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
 
         int iconSize = e.Bounds.Height - 4;
-        Image icon = ((ItemSelectable)lb.Items[e.Index]).Image;
+        Image icon = ((FileIndexed)lb.Items[e.Index]).Image;
 
         Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
 
@@ -378,9 +285,29 @@ public partial class SearchItemsForm : Form
         return path;
     }
 
+    private void LoadItemsByTextSearch(string? textSearch)
+    {
+        listBox.SuspendLayout();
+        listBox.Items.Clear();
+        listBox.Items.AddRange(plugin.DispatchLoadItems(textSearch).Take(6).ToArray());
+
+        listBox.Height = (listBox.Items.Count * 24) + 5;
+
+        if (listBox.Items.Count > 0)
+        {
+            listBox.SelectedIndex = 0;
+        }
+
+        listBox.ResumeLayout();
+        ComputeHeightSize();
+        ApplyRoundedRegion(20);
+        Refresh();
+    }
+
     private void OnLoad(object sender, EventArgs e)
     {
         ApplyRoundedRegion(20);
+        plugin.DispatchLoadItems(null);
     }
 
     private void OnResize(object sender, EventArgs e)
@@ -390,25 +317,25 @@ public partial class SearchItemsForm : Form
 
     private void SelectPrevItem(bool preventWrap = false)
     {
-        if (listBox1.SelectedIndex != 0)
+        if (listBox.SelectedIndex != 0)
         {
-            listBox1.SelectedIndex--;
+            listBox.SelectedIndex--;
         }
-        else if (listBox1.Items.Count > 0 && !preventWrap)
+        else if (listBox.Items.Count > 0 && !preventWrap)
         {
-            listBox1.SelectedIndex = listBox1.Items.Count - 1;
+            listBox.SelectedIndex = listBox.Items.Count - 1;
         }
     }
 
     private void SelectNextItem(bool preventWrap = false)
     {
-        if (listBox1.SelectedIndex < listBox1.Items.Count - 1)
+        if (listBox.SelectedIndex < listBox.Items.Count - 1)
         {
-            listBox1.SelectedIndex++;
+            listBox.SelectedIndex++;
         }
-        else if (listBox1.Items.Count > 0 && !preventWrap)
+        else if (listBox.Items.Count > 0 && !preventWrap)
         {
-            listBox1.SelectedIndex = 0;
+            listBox.SelectedIndex = 0;
         }
     }
 
@@ -425,13 +352,13 @@ public partial class SearchItemsForm : Form
             {
                 this.WindowState = FormWindowState.Normal;
                 this.PerformLayout();
-                if (listBox1.Items.Count > 0) this.listBox1.SelectedIndex = 0;
+                if (listBox.Items.Count > 0) this.listBox.SelectedIndex = 0;
                 this.Show();
                 this.Activate();
                 this.BringToFront();
                 this.Refresh();
                 this.textBox.Text = string.Empty;
-                lbPlaceHolder.Visible = textBox.Text.Length == 0;
+                label1.Visible = textBox.Text.Length == 0;
                 this.textBox.Focus();
             }
 
@@ -441,7 +368,6 @@ public partial class SearchItemsForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        pluginManager.RemoveAllListenersHotKeys();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
         base.OnFormClosing(e);
     }
