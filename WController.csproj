@@ -57,12 +57,29 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Components\DarkComboBox.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="WinSettingsStore.cs" />
+    <Compile Include="Util\WindowConfigurable.cs" />
     <Compile Include="Compiler\NullableAttributes.cs" />
     <Compile Include="Compiler\RequiredAttributes.cs" />
     <Compile Include="External\PluginItem.cs" />
     <Compile Include="External\Plugin.cs" />
     <Compile Include="External\PluginManager.cs" />
     <Compile Include="FileIndexes.cs" />
+    <Compile Include="Forms\SetAliasForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SetAliasForm.Designer.cs">
+      <DependentUpon>SetAliasForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\SetWindowsAliasesForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SetWindowsAliasesForm.Designer.cs">
+      <DependentUpon>SetWindowsAliasesForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="RenameWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -95,9 +112,16 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ShowDesktopHelper.cs" />
     <Compile Include="Util\Text.cs" />
+    <Compile Include="Util\WinHelper.cs" />
     <Compile Include="Util\WindowsApps.cs" />
     <Compile Include="WindowEffects.cs" />
     <Compile Include="WindowPreview.cs" />
+    <EmbeddedResource Include="Forms\SetAliasForm.resx">
+      <DependentUpon>SetAliasForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\SetWindowsAliasesForm.resx">
+      <DependentUpon>SetWindowsAliasesForm.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="RenameWindow.resx">
       <DependentUpon>RenameWindow.cs</DependentUpon>
     </EmbeddedResource>

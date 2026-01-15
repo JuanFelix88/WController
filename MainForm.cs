@@ -218,6 +218,9 @@ public partial class MainForm : Form
     [return: MarshalAs(UnmanagedType.Bool)]
     static extern bool IsWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool GetWindowRect(IntPtr hWnd, out Rectangle lpRect);
 
     private void ChangeOpacityImage(Image image, float modifier)
     {
@@ -310,12 +313,14 @@ public partial class MainForm : Form
     private Hashtable windowsRenames = new Hashtable();
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
     private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
+    private Dictionary<IntPtr, string> windowsPaths = new Dictionary<IntPtr, string>();
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
     private Image DefaultWindowIconImageIconic;
 
     private SearchItemsForm searchItemsForm;
     private System.Timers.Timer temporaryTimerChecker = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
+    private System.Timers.Timer temporaryTimer = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private float multiplierOpacityDecrement = 0.8f;
     private Font shortcutFont = new Font("Consolas", 10, FontStyle.Underline);
     private Rectangle previewRectangle;
@@ -386,17 +391,21 @@ public partial class MainForm : Form
         if (listBox1.SelectedIndex == (-1) || listBox1.SelectedItem is null)
         {
             lbPreview.Text = "No selected Window";
+            pnPreview.BackColor = AccentColor;
             return;
         }
 
+        WindowItem selectedWindow = (WindowItem)listBox1.SelectedItem;
+        Rectangle previewRect = GetProportionalRectangle(selectedWindow?.Handle ?? IntPtr.Zero, previewRectangle);
+
         previewHandle = WindowPreview.ShowPreview(
             this.Handle,
-            (listBox1.SelectedItem as WindowItem)?.Handle ?? IntPtr.Zero,
-            previewRectangle,
+            selectedWindow?.Handle ?? IntPtr.Zero,
+            previewRect,
             245);
 
         lbPreview.Text = string.Empty;
-        lbSelectedWindow.Text = (listBox1.SelectedItem as WindowItem)?.Title;
+        lbSelectedWindow.Text = selectedWindow?.Title;
     }
 
     private void OnTemporaryTimerCheckerElapsed(object sender, System.Timers.ElapsedEventArgs e)
@@ -464,6 +473,61 @@ public partial class MainForm : Form
         {
             return new Icon(ms);
         }
+    }
+
+    private Rectangle GetProportionalRectangle(IntPtr hWnd, Rectangle container)
+    {
+        if (!GetWindowRect(hWnd, out Rectangle windowRect))
+            return container;
+
+        int windowWidth = windowRect.Width;
+        int windowHeight = windowRect.Height;
+        double windowAspect = (double)windowWidth / windowHeight;
+        double containerAspect = (double)container.Width / container.Height;
+
+        int rectWidth, rectHeight;
+        if (windowAspect > containerAspect)
+        {
+            rectWidth = container.Width;
+            rectHeight = (int)(container.Width / windowAspect);
+        }
+        else
+        {
+            rectHeight = container.Height;
+            rectWidth = (int)(container.Height * windowAspect);
+        }
+
+        int x = container.X + (container.Width - rectWidth) / 2;
+        int y = container.Y + (container.Height - rectHeight) / 2 - ((container.Height - rectHeight) / 2 / 2);
+
+        return new Rectangle(x, y, rectWidth, rectHeight);
+    }
+
+    private Color GetDominantColor(Image image)
+    {
+        if (image is not Bitmap bmp)
+            return AccentColor;
+
+        Dictionary<Color, int> colorFrequency = new Dictionary<Color, int>();
+        int step = Math.Max(1, bmp.Width / 32);
+
+        for (int y = 0; y < bmp.Height; y += step)
+        {
+            for (int x = 0; x < bmp.Width; x += step)
+            {
+                Color pixel = bmp.GetPixel(x, y);
+                if (pixel.A < 128) continue;
+
+                if (colorFrequency.ContainsKey(pixel))
+                    colorFrequency[pixel]++;
+                else
+                    colorFrequency[pixel] = 1;
+            }
+        }
+
+        return colorFrequency.Count > 0
+            ? colorFrequency.OrderByDescending(x => x.Value).First().Key
+            : AccentColor;
     }
 
     private void ComputeIgnoreWindows()
@@ -689,6 +753,11 @@ public partial class MainForm : Form
             }
 
             this.LoadWindowList();
+        }
+        if (e.KeyCode == Keys.F3)
+        {
+            Forms.SetWindowsAliasesForm.ShowSettings(listBox1.Items.Cast<WindowItem>());
+            return;
         }
     }
 
@@ -948,6 +1017,8 @@ public partial class MainForm : Form
         listBox1.Items.Clear();
         listBox1.SuspendLayout();
         IntPtr? firstHandle = null;
+        var winSettings = WinSettingsStore.LoadFromCache();
+        
         EnumWindows((hWnd, lParam) =>
         {
             if (hWnd == this.Handle || hWnd == IntPtr.Zero)
@@ -986,6 +1057,24 @@ public partial class MainForm : Form
 
                 string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
                 string? shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
+                if (shortcut is null)
+                {
+                    string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
+                        ? existingPath
+                        : WinHelper.GetPathFromHandle(hWnd);
+                    
+                    if (existingPath is null)
+                    {
+                        windowsPaths[hWnd] = programPath;
+                    }
+
+                    var matchedSetting = winSettings.FirstOrDefault(setting => setting.ProgramPath == programPath);
+
+                    if (matchedSetting is not null)
+                    {
+                        shortcut = matchedSetting.Shortcut;
+                    }
+                }
 
                 listBox1.Items.Add(new WindowItem
                 {
@@ -1081,7 +1170,7 @@ public partial class MainForm : Form
         base.OnFormClosing(e);
     }
 
-    class WindowItem
+    public class WindowItem
     {
         public required IntPtr Handle { get; set; }
         public required string Title { get; set; }
