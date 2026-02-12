@@ -167,6 +167,24 @@ public partial class MainForm : Form
         SetForegroundWindow(window.Handle);
     }
 
+    private void FocusInOneWindow(WindowItem window)
+    {
+        this.Hide();
+        foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
+        {
+            if (window == itemWindow) continue;
+            if (itemWindow == null) continue;
+            if (itemWindow.IsIconic) continue;
+            HideWindow(itemWindow);
+        }
+        FocusWindow(window);
+
+        if (listBox1.Items.Count > 0)
+        {
+            IncrementCount((WindowItem)listBox1.Items[0], window);
+        }
+    }
+
     private void ShowWindow(WindowItem window)
     {
         if (IsIconic(window.Handle))
@@ -325,6 +343,7 @@ public partial class MainForm : Form
     private Font shortcutFont = new Font("Consolas", 10, FontStyle.Underline);
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
+    private bool isOneWindowMode = false;
 
     public MainForm()
     {
@@ -664,40 +683,54 @@ public partial class MainForm : Form
         }
         if (e.Shift && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem itemInforceSaltsIncrements)
         {
-            FocusWindow(itemInforceSaltsIncrements);
-            if (listBox1.Items.Count > 0)
+            if (isOneWindowMode)
             {
-                IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, 10);
+                FocusInOneWindow(itemInforceSaltsIncrements);
             }
+            else
+            {
+                FocusWindow(itemInforceSaltsIncrements);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, 10);
+                }
+            }
+            
 
             this.Hide();
             return;
         }
         if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
         {
-            this.Hide();
-            foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
+            // inverted:
+            if (isOneWindowMode)
             {
-                if (windowToFocusWithControl == itemWindow) continue;
-                if (itemWindow == null) continue;
-                if (itemWindow.IsIconic) continue;
-                HideWindow(itemWindow);
+                FocusWindow(windowToFocusWithControl);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], windowToFocusWithControl);
+                }
             }
-            FocusWindow(windowToFocusWithControl);
-
-            if (listBox1.Items.Count > 0)
+            else
             {
-                IncrementCount((WindowItem)listBox1.Items[0], windowToFocusWithControl);
+                FocusInOneWindow(windowToFocusWithControl);
             }
 
             return;
         }
         if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
         {
-            FocusWindow(item);
-            if (listBox1.Items.Count > 0)
+            if (isOneWindowMode)
             {
-                IncrementCount((WindowItem)listBox1.Items[0], item);
+                FocusInOneWindow(item);
+            }
+            else
+            {
+                FocusWindow(item);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], item);
+                }
             }
 
             this.Hide();
@@ -759,6 +792,12 @@ public partial class MainForm : Form
             Forms.SetWindowsAliasesForm.ShowSettings(listBox1.Items.Cast<WindowItem>());
             return;
         }
+        if (e.KeyCode == Keys.F11)
+        {
+            isOneWindowMode = !isOneWindowMode;
+            UpdateOneWindowModeIndicator();
+            return;
+        }
     }
 
     private void ComputeLastSelectedIndex(int i)
@@ -766,6 +805,20 @@ public partial class MainForm : Form
         if (listBox1.Items.Count == 0) return;
 
         listBox1.SelectedIndex = i >= listBox1.Items.Count ? listBox1.Items.Count - 1 : i;
+    }
+
+    private void UpdateOneWindowModeIndicator()
+    {
+        if (isOneWindowMode)
+        {
+            lbSelectedWindow.Text = "[F11] Single Window Mode";
+            lbSelectedWindow.ForeColor = Color.FromArgb(255, 180, 100);
+        }
+        else
+        {
+            lbSelectedWindow.Text = "...";
+            lbSelectedWindow.ForeColor = Color.FromArgb(144, 145, 226);
+        }
     }
 
     private void ComputeHeightSize()
@@ -1154,6 +1207,7 @@ public partial class MainForm : Form
                 this.PerformLayout();
                 this.LoadWindowList();
                 if (listBox1.Items.Count > 0) this.listBox1.SelectedIndex = 0;
+                UpdateOneWindowModeIndicator();
                 this.Show();
                 this.Activate();
                 this.BringToFront();
