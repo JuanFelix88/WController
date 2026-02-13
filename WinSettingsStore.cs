@@ -11,7 +11,7 @@ public static class WinSettingsStore
 {
     private static readonly string _settingsPath;
     private const string HEADER = "WSET";
-    private const int VERSION = 1;
+    private const int VERSION = 2;
     private static List<WindowConfigurable> cachedWindows = new List<WindowConfigurable>();
     private static DateTime lastCachedRead = DateTime.MinValue;
 
@@ -44,6 +44,8 @@ public static class WinSettingsStore
                     writer.Write(window.Shortcut ?? string.Empty);
                     writer.Write(window.Title ?? string.Empty);
                     writer.Write(window.ProgramPath ?? string.Empty);
+                    writer.Write((byte)window.MatchMode);
+                    writer.Write(window.RegexPattern ?? string.Empty);
                 }
             }
         }
@@ -72,7 +74,7 @@ public static class WinSettingsStore
 
                 // Validar versão
                 int version = reader.ReadInt32();
-                if (version != VERSION)
+                if (version < 1 || version > VERSION)
                     return windows;
 
                 // Ler quantidade de janelas
@@ -86,14 +88,25 @@ public static class WinSettingsStore
                         string title = reader.ReadString();
                         string programPath = reader.ReadString();
 
-                        if (string.IsNullOrEmpty(programPath))
+                        MatchMode matchMode = MatchMode.Path;
+                        string regexPattern = string.Empty;
+
+                        if (version >= 2)
+                        {
+                            matchMode = (MatchMode)reader.ReadByte();
+                            regexPattern = reader.ReadString();
+                        }
+
+                        if (string.IsNullOrEmpty(programPath) && matchMode == MatchMode.Path)
                             continue;
 
                         windows.Add(new WindowConfigurable
                         {
                             Shortcut = shortCut,
                             Title = title,
-                            ProgramPath = programPath
+                            ProgramPath = programPath,
+                            MatchMode = matchMode,
+                            RegexPattern = regexPattern
                         });
                     }
                     catch (Exception ex)

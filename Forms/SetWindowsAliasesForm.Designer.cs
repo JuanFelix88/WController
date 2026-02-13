@@ -39,6 +39,8 @@ partial class SetWindowsAliasesForm
             this.panel1 = new System.Windows.Forms.Panel();
             this.label3 = new System.Windows.Forms.Label();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.label4 = new System.Windows.Forms.Label();
+            this.panel3 = new System.Windows.Forms.Panel();
             this.pnShortcuts.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -73,6 +75,8 @@ partial class SetWindowsAliasesForm
             // 
             // pnShortcuts
             // 
+            this.pnShortcuts.Controls.Add(this.label4);
+            this.pnShortcuts.Controls.Add(this.panel3);
             this.pnShortcuts.Controls.Add(this.label2);
             this.pnShortcuts.Controls.Add(this.panel2);
             this.pnShortcuts.Controls.Add(this.label3);
@@ -134,6 +138,27 @@ partial class SetWindowsAliasesForm
             this.panel2.Size = new System.Drawing.Size(13, 18);
             this.panel2.TabIndex = 6;
             // 
+            // label4
+            // 
+            this.label4.AutoSize = true;
+            this.label4.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(80)))), ((int)(((byte)(80)))), ((int)(((byte)(80)))));
+            this.label4.Dock = System.Windows.Forms.DockStyle.Left;
+            this.label4.ForeColor = System.Drawing.Color.White;
+            this.label4.Location = new System.Drawing.Point(321, 0);
+            this.label4.Name = "label4";
+            this.label4.Padding = new System.Windows.Forms.Padding(1);
+            this.label4.Size = new System.Drawing.Size(85, 15);
+            this.label4.TabIndex = 7;
+            this.label4.Text = "[+/-] Reorder";
+            // 
+            // panel3
+            // 
+            this.panel3.Dock = System.Windows.Forms.DockStyle.Left;
+            this.panel3.Location = new System.Drawing.Point(308, 0);
+            this.panel3.Name = "panel3";
+            this.panel3.Size = new System.Drawing.Size(13, 18);
+            this.panel3.TabIndex = 8;
+            // 
             // SetWindowsAliasesForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -169,5 +194,7 @@ partial class SetWindowsAliasesForm
     private Panel panel2;
     private Label label3;
     private Panel panel1;
+    private Label label4;
+    private Panel panel3;
 }
 

@@ -684,16 +684,21 @@ public partial class MainForm : Form
         }
         if (e.Shift && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem itemInforceSaltsIncrements)
         {
+            int adderForClustering = 40;
             if (isOneWindowMode && !itemInforceSaltsIncrements.HighRelevance)
             {
                 FocusInOneWindow(itemInforceSaltsIncrements);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, adderForClustering - 1);
+                }
             }
             else
             {
                 FocusWindow(itemInforceSaltsIncrements);
                 if (listBox1.Items.Count > 0)
                 {
-                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, 40);
+                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, adderForClustering);
                 }
             }
             
@@ -1155,7 +1160,8 @@ public partial class MainForm : Form
                         windowsPaths[hWnd] = programPath;
                     }
 
-                    var matchedSetting = winSettings.FirstOrDefault(setting => setting.ProgramPath == programPath);
+                    string windowTitle = sb.ToString();
+                    var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
 
                     if (matchedSetting is not null)
                     {

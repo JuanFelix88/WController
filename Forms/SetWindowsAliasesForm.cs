@@ -244,6 +244,35 @@ public partial class SetWindowsAliasesForm : Form
             this.DeleteConfig(item);
             return;
         }
+        if (e.KeyCode == Keys.Oemplus || e.KeyCode == Keys.Add)
+        {
+            MoveItem(-1);
+            return;
+        }
+        if (e.KeyCode == Keys.OemMinus || e.KeyCode == Keys.Subtract)
+        {
+            MoveItem(1);
+            return;
+        }
+    }
+
+    private void MoveItem(int direction)
+    {
+        int index = listBox.SelectedIndex;
+        if (index < 0) return;
+
+        int newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= listBox.Items.Count) return;
+
+        var items = listBox.Items.Cast<WindowConfigurable>().ToList();
+        var item = items[index];
+        items.RemoveAt(index);
+        items.Insert(newIndex, item);
+
+        WinSettingsStore.Save(items);
+        listBox.Items.Clear();
+        listBox.Items.AddRange(items.ToArray());
+        listBox.SelectedIndex = newIndex;
     }
 
     private void ComputeHeightSize()

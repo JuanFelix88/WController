@@ -33,6 +33,9 @@
             this.textBoxShortcut = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
             this.cbPrograms = new WController.Components.DarkComboBox();
+            this.checkBoxRegex = new System.Windows.Forms.CheckBox();
+            this.textBoxRegex = new System.Windows.Forms.TextBox();
+            this.labelRegex = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // label1
@@ -53,10 +56,10 @@
             this.buttonOk.FlatAppearance.BorderSize = 0;
             this.buttonOk.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.buttonOk.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(230)))), ((int)(((byte)(230)))), ((int)(((byte)(230)))));
-            this.buttonOk.Location = new System.Drawing.Point(15, 105);
+            this.buttonOk.Location = new System.Drawing.Point(15, 155);
             this.buttonOk.Name = "buttonOk";
             this.buttonOk.Size = new System.Drawing.Size(257, 23);
-            this.buttonOk.TabIndex = 3;
+            this.buttonOk.TabIndex = 5;
             this.buttonOk.Text = "Apply";
             this.buttonOk.UseVisualStyleBackColor = false;
             this.buttonOk.Click += new System.EventHandler(this.OnOkClick);
@@ -94,14 +97,50 @@
             this.cbPrograms.Location = new System.Drawing.Point(15, 31);
             this.cbPrograms.Name = "cbPrograms";
             this.cbPrograms.Size = new System.Drawing.Size(257, 21);
-            this.cbPrograms.TabIndex = 5;
+            this.cbPrograms.TabIndex = 1;
+            // 
+            // checkBoxRegex
+            // 
+            this.checkBoxRegex.AutoSize = true;
+            this.checkBoxRegex.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(210)))), ((int)(((byte)(210)))), ((int)(((byte)(210)))));
+            this.checkBoxRegex.Location = new System.Drawing.Point(15, 105);
+            this.checkBoxRegex.Name = "checkBoxRegex";
+            this.checkBoxRegex.Size = new System.Drawing.Size(109, 17);
+            this.checkBoxRegex.TabIndex = 3;
+            this.checkBoxRegex.Text = "Match by Regex";
+            this.checkBoxRegex.UseVisualStyleBackColor = true;
+            // 
+            // textBoxRegex
+            // 
+            this.textBoxRegex.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
+            this.textBoxRegex.ForeColor = System.Drawing.SystemColors.Info;
+            this.textBoxRegex.Location = new System.Drawing.Point(15, 131);
+            this.textBoxRegex.Name = "textBoxRegex";
+            this.textBoxRegex.Size = new System.Drawing.Size(257, 20);
+            this.textBoxRegex.TabIndex = 4;
+            this.textBoxRegex.Visible = false;
+            // 
+            // labelRegex
+            // 
+            this.labelRegex.AutoSize = true;
+            this.labelRegex.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelRegex.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(160)))), ((int)(((byte)(160)))), ((int)(((byte)(160)))));
+            this.labelRegex.Location = new System.Drawing.Point(130, 106);
+            this.labelRegex.Name = "labelRegex";
+            this.labelRegex.Size = new System.Drawing.Size(115, 13);
+            this.labelRegex.TabIndex = 7;
+            this.labelRegex.Text = "(matches window title)";
+            this.labelRegex.Visible = false;
             // 
             // SetAliasForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
-            this.ClientSize = new System.Drawing.Size(284, 139);
+            this.ClientSize = new System.Drawing.Size(284, 189);
+            this.Controls.Add(this.labelRegex);
+            this.Controls.Add(this.textBoxRegex);
+            this.Controls.Add(this.checkBoxRegex);
             this.Controls.Add(this.cbPrograms);
             this.Controls.Add(this.label2);
             this.Controls.Add(this.textBoxShortcut);
@@ -123,5 +162,8 @@
         private System.Windows.Forms.TextBox textBoxShortcut;
         private System.Windows.Forms.Label label2;
         private Components.DarkComboBox cbPrograms;
+        private System.Windows.Forms.CheckBox checkBoxRegex;
+        private System.Windows.Forms.TextBox textBoxRegex;
+        private System.Windows.Forms.Label labelRegex;
     }
 }
