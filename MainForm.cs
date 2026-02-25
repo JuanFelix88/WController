@@ -928,7 +928,7 @@ public partial class MainForm : Form
             }
         }
 
-        if (item.HighRelevance)
+        if (item.HighRelevance || (e.Index == 0 && listBox1.Items.Cast<WindowItem>().Any(i => i.HighRelevance)))
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             int diameter = 6;
