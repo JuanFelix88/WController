@@ -839,19 +839,9 @@ public partial class MainForm : Form
         else func.Invoke();
     }
 
-    private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
+private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
     {
         e.ItemHeight = listBox1.ItemHeight;
-
-        if (e.Index > 0 && e.Index < listBox1.Items.Count)
-        {
-            WindowItem current = (WindowItem)listBox1.Items[e.Index];
-            WindowItem previous = (WindowItem)listBox1.Items[e.Index - 1];
-            if (!current.HighRelevance && previous.HighRelevance)
-            {
-                e.ItemHeight += 5;
-            }
-        }
     }
 
     private void OnListBox1DrawItem(object sender, DrawItemEventArgs e)
@@ -874,32 +864,14 @@ public partial class MainForm : Form
             selectedColor = IncrementColor(selectedColor, multiplierOpacityDecrement);
         }
 
-        Color backColor = selected ? selectedColor : lb.BackColor;
+Color backColor = selected ? selectedColor : lb.BackColor;
 
-        // Aplica margin-top no primeiro item não-HighRelevance após um item HighRelevance
-        int marginTop = 0;
-        if (!item.HighRelevance && e.Index > 0)
-        {
-            WindowItem previousItem = (WindowItem)lb.Items[e.Index - 1];
-            if (previousItem.HighRelevance)
-                marginTop = 5;
-        }
+        e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
 
-        // Desenha a faixa de margin-top com a cor de fundo do ListBox
-        if (marginTop > 0)
-        {
-            Rectangle marginRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width, marginTop);
-            e.Graphics.FillRectangle(new SolidBrush(lb.BackColor), marginRect);
-        }
-
-        Rectangle effectiveBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + marginTop, e.Bounds.Width, e.Bounds.Height - marginTop);
-
-        e.Graphics.FillRectangle(new SolidBrush(backColor), effectiveBounds);
-
-        int iconSize = effectiveBounds.Height - 4;
+        int iconSize = e.Bounds.Height - 4;
         Image icon = ((WindowItem)lb.Items[e.Index]).OutIcon;
 
-        Rectangle iconRect = new Rectangle(effectiveBounds.X + 2, effectiveBounds.Y + 2, iconSize, iconSize);
+        Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
 
         if (icon != null)
             e.Graphics.DrawImage(icon, iconRect);
@@ -908,13 +880,13 @@ public partial class MainForm : Form
 
         if (!string.IsNullOrEmpty(item.Shortcut))
         {
-            Rectangle shortRect = new Rectangle(textX, effectiveBounds.Y, 15, effectiveBounds.Height);
+            Rectangle shortRect = new Rectangle(textX, e.Bounds.Y, 15, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, item.Shortcut, shortcutFont, shortRect, shortcutColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
             textX += 12;
         }
 
-        Rectangle textRect = new Rectangle(textX, effectiveBounds.Y, effectiveBounds.Width - textX, effectiveBounds.Height);
+        Rectangle textRect = new Rectangle(textX, e.Bounds.Y, e.Bounds.Width - textX, e.Bounds.Height);
         TextRenderer.DrawText(e.Graphics, text, lb.Font, textRect, foreColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
@@ -923,18 +895,18 @@ public partial class MainForm : Form
             using (Pen borderPen = new Pen(IncrementColor(selectedColor, 2f), 1.5f))
             {
                 borderPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
-                Rectangle borderRect = new Rectangle(effectiveBounds.X, effectiveBounds.Y, effectiveBounds.Width - 1, effectiveBounds.Height - 1);
+                Rectangle borderRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
                 e.Graphics.DrawRectangle(borderPen, borderRect);
             }
         }
 
-        if (item.HighRelevance || (e.Index == 0 && listBox1.Items.Cast<WindowItem>().Any(i => i.HighRelevance)))
+        if (item.HighRelevance)
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             int diameter = 6;
             int marginRight = 6;
-            int circleX = effectiveBounds.Right - diameter - marginRight;
-            int circleY = effectiveBounds.Top + (effectiveBounds.Height - diameter) / 2;
+            int circleX = e.Bounds.Right - diameter - marginRight;
+            int circleY = e.Bounds.Top + (e.Bounds.Height - diameter) / 2;
             Rectangle circleRect = new Rectangle(circleX, circleY, diameter, diameter);
 
             using (Brush whiteBrush = new SolidBrush(Color.White))
@@ -1206,7 +1178,6 @@ public partial class MainForm : Form
                     return x;
                 })
                 .OrderBy(item => item.TypeWindow)
-                .ThenByDescending(item => item.CountReferences)
                 .ToList()
                 .ForEach(item => listBox1.Items.Add(item));
         }
