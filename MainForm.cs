@@ -54,6 +54,40 @@ public partial class MainForm : Form
     static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
     [DllImport("user32.dll")]
+    static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    const int WH_KEYBOARD_LL = 13;
+    const int WM_KEYDOWN = 0x0100;
+    const int WM_SYSKEYDOWN = 0x0104;
+    const byte VK_APPS = 0x5D;
+    const byte VK_LWIN = 0x5B;
+    const byte VK_RWIN = 0x5C;
+    const uint KEYEVENTF_KEYUP = 0x0002;
+    const byte VK_BROWSER_SEARCH = 0xAA;
+    const byte VK_LAUNCH_APP1 = 0xB6;
+    const byte VK_LAUNCH_APP2 = 0xB7;
+    const byte VK_F23 = 0x86;
+
+    private IntPtr keyboardHookId = IntPtr.Zero;
+    private LowLevelKeyboardProc? keyboardHookProc;
+    private bool isWinKeyDown = false;
+
+    [DllImport("user32.dll")]
     static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     const int SW_RESTORE = 9;
@@ -376,6 +410,7 @@ public partial class MainForm : Form
         ComputeIgnoreWindows();
         LoadWindowList();
         RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Oemtilde);
+        InstallKeyboardHook();
         //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
         //this.KeyDown += this.MainForm_KeyDown;
 
@@ -701,7 +736,7 @@ public partial class MainForm : Form
                     IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, adderForClustering);
                 }
             }
-            
+
 
             this.Hide();
             return;
@@ -839,7 +874,7 @@ public partial class MainForm : Form
         else func.Invoke();
     }
 
-private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
+    private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
     {
         e.ItemHeight = listBox1.ItemHeight;
     }
@@ -864,7 +899,7 @@ private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
             selectedColor = IncrementColor(selectedColor, multiplierOpacityDecrement);
         }
 
-Color backColor = selected ? selectedColor : lb.BackColor;
+        Color backColor = selected ? selectedColor : lb.BackColor;
 
         e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
 
@@ -1082,7 +1117,7 @@ Color backColor = selected ? selectedColor : lb.BackColor;
         listBox1.SuspendLayout();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
-        
+
         EnumWindows((hWnd, lParam) =>
         {
             if (hWnd == this.Handle || hWnd == IntPtr.Zero)
@@ -1126,7 +1161,7 @@ Color backColor = selected ? selectedColor : lb.BackColor;
                     string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
                         ? existingPath
                         : WinHelper.GetPathFromHandle(hWnd);
-                    
+
                     if (existingPath is null)
                     {
                         windowsPaths[hWnd] = programPath;
@@ -1229,9 +1264,63 @@ Color backColor = selected ? selectedColor : lb.BackColor;
         base.WndProc(ref m);
     }
 
+    private void InstallKeyboardHook()
+    {
+        keyboardHookProc = LowLevelKeyboardHookCallback;
+        using (var curProcess = Process.GetCurrentProcess())
+        using (var curModule = curProcess.MainModule)
+        {
+            keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, keyboardHookProc, GetModuleHandle(curModule.ModuleName), 0);
+        }
+    }
+
+    private void UninstallKeyboardHook()
+    {
+        if (keyboardHookId != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(keyboardHookId);
+            keyboardHookId = IntPtr.Zero;
+        }
+    }
+
+    private IntPtr LowLevelKeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            int vkCode = Marshal.ReadInt32(lParam);
+
+            bool isKeyDown = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
+            bool isKeyUp = !isKeyDown;
+
+            if (vkCode == VK_LWIN || vkCode == VK_RWIN)
+            {
+                isWinKeyDown = isKeyDown;
+            }
+
+            // Copilot key configured as Search mode (VK_BROWSER_SEARCH, VK_LAUNCH_APP1, VK_LAUNCH_APP2)
+            if (isKeyDown && (vkCode == VK_BROWSER_SEARCH || vkCode == VK_LAUNCH_APP1 || vkCode == VK_LAUNCH_APP2))
+            {
+                keybd_event(VK_APPS, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_APPS, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                return (IntPtr)1;
+            }
+
+            // Copilot key default combo (Win + Shift + F23)
+            if (isKeyDown && isWinKeyDown && vkCode == VK_F23)
+            {
+                keybd_event(VK_APPS, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_APPS, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                return (IntPtr)1;
+            }
+        }
+
+        return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         UnregisterHotKey(this.Handle, HOTKEY_ID);
+        UninstallKeyboardHook();
         base.OnFormClosing(e);
     }
 
