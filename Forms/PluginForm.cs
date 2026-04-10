@@ -262,7 +262,7 @@ public partial class PluginForm : Form
         int borderThickness = 2;
         Color borderColor = SecondaryColor;
 
-        Rectangle rect = new Rectangle(0, 0, this.Width - 1, this.Height - 4);
+        Rectangle rect = new Rectangle(0, 0, this.Width - 1, this.Height - 1);
 
         using (GraphicsPath path = GetRoundedPath(rect, borderRadius))
         using (Pen pen = new Pen(borderColor, borderThickness))
@@ -306,6 +306,7 @@ public partial class PluginForm : Form
 
     private void OnLoad(object sender, EventArgs e)
     {
+        WindowEffects.TrySetAttribute(this.Handle, 33, 2);
         ApplyRoundedRegion(20);
         plugin.DispatchLoadItems(null);
     }

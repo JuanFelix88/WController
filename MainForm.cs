@@ -379,7 +379,6 @@ public partial class MainForm : Form
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
     private bool isOneWindowMode = false;
-    private bool useDwmRoundedCorners = false;
 
     public MainForm()
     {
@@ -1059,21 +1058,13 @@ public partial class MainForm : Form
 
     private void MainForm_Load(object sender, EventArgs e)
     {
-        // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
-        useDwmRoundedCorners = WindowEffects.TrySetAttribute(this.Handle, 33, 2);
-
-        if (!useDwmRoundedCorners)
-        {
-            ApplyRoundedRegion(20);
-        }
+        WindowEffects.TrySetAttribute(this.Handle, 33, 2);
+        ApplyRoundedRegion(20);
     }
 
     private void MainForm_Resize(object sender, EventArgs e)
     {
-        if (!useDwmRoundedCorners)
-        {
-            ApplyRoundedRegion(20);
-        }
+        ApplyRoundedRegion(20);
     }
 
     public void KillWindowProcess(IntPtr hWnd)
