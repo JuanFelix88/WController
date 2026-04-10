@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using WController.Agent.UI;
 using WController.Properties;
 using WController.Util;
 
@@ -372,6 +373,7 @@ public partial class MainForm : Form
     private Image DefaultWindowIconImageIconic;
 
     private SearchItemsForm searchItemsForm;
+    private AgentChatForm? agentChatForm;
     private System.Timers.Timer temporaryTimerChecker = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private System.Timers.Timer temporaryTimer = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private float multiplierOpacityDecrement = 0.8f;
@@ -437,6 +439,28 @@ public partial class MainForm : Form
         temporaryTimerChecker.Start();
 
         searchItemsForm = new SearchItemsForm();
+
+        // Ctrl+I opens agent chat
+        this.KeyPreview = true;
+        this.KeyDown += this.OnMainFormKeyDown;
+    }
+
+    private void OnMainFormKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Control && e.KeyCode == Keys.I)
+        {
+            e.SuppressKeyPress = true;
+            OpenAgentChat();
+        }
+    }
+
+    private void OpenAgentChat()
+    {
+        if (agentChatForm == null || agentChatForm.IsDisposed)
+        {
+            agentChatForm = new AgentChatForm();
+        }
+        agentChatForm.ShowAgent();
     }
 
     private void OnListBoxSelectedIndexChanged(object sender, EventArgs e)

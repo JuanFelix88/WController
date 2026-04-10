@@ -57,6 +57,26 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Agent\IAgentTool.cs" />
+    <Compile Include="Agent\AgentConfig.cs" />
+    <Compile Include="Agent\AgentMessage.cs" />
+    <Compile Include="Agent\AgentSession.cs" />
+    <Compile Include="Agent\ToolRegistry.cs" />
+    <Compile Include="Agent\AgentOrchestrator.cs" />
+    <Compile Include="Agent\LLM\ILLMClient.cs" />
+    <Compile Include="Agent\LLM\OpenAIClient.cs" />
+    <Compile Include="Agent\LLM\JsonHelper.cs" />
+    <Compile Include="Agent\Tools\ReadFileTool.cs" />
+    <Compile Include="Agent\Tools\WriteFileTool.cs" />
+    <Compile Include="Agent\Tools\SearchCodebaseTool.cs" />
+    <Compile Include="Agent\Tools\RunCommandTool.cs" />
+    <Compile Include="Agent\Tools\ListDirectoryTool.cs" />
+    <Compile Include="Agent\Rendering\IMarkdownRenderer.cs" />
+    <Compile Include="Agent\Rendering\WinFormsMarkdownRenderer.cs" />
+    <Compile Include="Agent\UI\AgentChatForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Agent\UI\ShimmerLabel.cs" />
     <Compile Include="Components\DarkComboBox.cs">
       <SubType>Component</SubType>
     </Compile>
