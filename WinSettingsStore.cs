@@ -30,30 +30,30 @@ public static class WinSettingsStore
     {
         try
         {
-            using (FileStream fs = new FileStream(_settingsPath, FileMode.Create, FileAccess.Write))
-            using (BinaryWriter writer = new BinaryWriter(fs))
-            {
-                // Escrever header
-                writer.Write(HEADER);
-                writer.Write(VERSION);
-                writer.Write(windows.Count);
+            using var fs = new FileStream(_settingsPath, FileMode.Create, FileAccess.Write);
+            using var writer = new BinaryWriter(fs);
 
-                // Escrever cada janela
-                foreach (var window in windows)
-                {
-                    writer.Write(window.Shortcut ?? string.Empty);
-                    writer.Write(window.Title ?? string.Empty);
-                    writer.Write(window.ProgramPath ?? string.Empty);
-                    writer.Write((byte)window.MatchMode);
-                    writer.Write(window.RegexPattern ?? string.Empty);
-                    writer.Write(window.IconPath ?? string.Empty);
-                }
-            }
+            writer.Write(HEADER);
+            writer.Write(VERSION);
+            writer.Write(windows.Count);
+
+            foreach (var window in windows)
+                WriteWindow(writer, window);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Erro ao salvar configurações: {ex.Message}");
         }
+    }
+
+    private static void WriteWindow(BinaryWriter writer, WindowConfigurable window)
+    {
+        writer.Write(window.Shortcut ?? string.Empty);
+        writer.Write(window.Title ?? string.Empty);
+        writer.Write(window.ProgramPath ?? string.Empty);
+        writer.Write((byte)window.MatchMode);
+        writer.Write(window.RegexPattern ?? string.Empty);
+        writer.Write(window.IconPath ?? string.Empty);
     }
 
     public static List<WindowConfigurable> Load()
@@ -65,62 +65,30 @@ public static class WinSettingsStore
 
         try
         {
-            using (FileStream fs = new FileStream(_settingsPath, FileMode.Open, FileAccess.Read))
-            using (BinaryReader reader = new BinaryReader(fs))
+            using var fs = new FileStream(_settingsPath, FileMode.Open, FileAccess.Read);
+            using var reader = new BinaryReader(fs);
+
+            string header = reader.ReadString();
+            if (header != HEADER)
+                return windows;
+
+            int version = reader.ReadInt32();
+            if (version < 1 || version > VERSION)
+                return windows;
+
+            int count = reader.ReadInt32();
+
+            for (int i = 0; i < count; i++)
             {
-                // Validar header
-                string header = reader.ReadString();
-                if (header != HEADER)
-                    return windows;
-
-                // Validar versão
-                int version = reader.ReadInt32();
-                if (version < 1 || version > VERSION)
-                    return windows;
-
-                // Ler quantidade de janelas
-                int count = reader.ReadInt32();
-
-                for (int i = 0; i < count; i++)
+                try
                 {
-                    try
-                    {
-                        string shortCut = reader.ReadString();
-                        string title = reader.ReadString();
-                        string programPath = reader.ReadString();
-
-                        MatchMode matchMode = MatchMode.Path;
-                        string regexPattern = string.Empty;
-                        string iconPath = string.Empty;
-
-                        if (version >= 2)
-                        {
-                            matchMode = (MatchMode)reader.ReadByte();
-                            regexPattern = reader.ReadString();
-                        }
-
-                        if (version >= 3)
-                        {
-                            iconPath = reader.ReadString();
-                        }
-
-                        if (string.IsNullOrEmpty(programPath) && matchMode == MatchMode.Path)
-                            continue;
-
-                        windows.Add(new WindowConfigurable
-                        {
-                            Shortcut = shortCut,
-                            Title = title,
-                            ProgramPath = programPath,
-                            MatchMode = matchMode,
-                            RegexPattern = regexPattern,
-                            IconPath = iconPath
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Erro ao carregar janela {i}: {ex.Message}");
-                    }
+                    var window = ReadWindow(reader, version);
+                    if (window != null)
+                        windows.Add(window);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Erro ao carregar janela {i}: {ex.Message}");
                 }
             }
         }
@@ -130,6 +98,39 @@ public static class WinSettingsStore
         }
 
         return windows;
+    }
+
+    private static WindowConfigurable? ReadWindow(BinaryReader reader, int version)
+    {
+        string shortCut = reader.ReadString();
+        string title = reader.ReadString();
+        string programPath = reader.ReadString();
+
+        MatchMode matchMode = MatchMode.Path;
+        string regexPattern = string.Empty;
+        string iconPath = string.Empty;
+
+        if (version >= 2)
+        {
+            matchMode = (MatchMode)reader.ReadByte();
+            regexPattern = reader.ReadString();
+        }
+
+        if (version >= 3)
+            iconPath = reader.ReadString();
+
+        if (string.IsNullOrEmpty(programPath) && matchMode == MatchMode.Path)
+            return null;
+
+        return new WindowConfigurable
+        {
+            Shortcut = shortCut,
+            Title = title,
+            ProgramPath = programPath,
+            MatchMode = matchMode,
+            RegexPattern = regexPattern,
+            IconPath = iconPath
+        };
     }
 
     public static List<WindowConfigurable> LoadFromCache()

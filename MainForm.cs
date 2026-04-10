@@ -713,18 +713,33 @@ public partial class MainForm : Form
 
     private void OnListBox1KeyDown(object sender, KeyEventArgs e)
     {
+        if (TryHandleAppExit(e)) return;
+        if (TryHandleWindowToggle(e)) return;
+        if (TryHandleWindowActivation(e)) return;
+        if (TryHandleWindowRemoval(e)) return;
+        if (TryHandleRename(e)) return;
+        if (TryHandleViewModes(e)) return;
+    }
+
+    private bool TryHandleAppExit(KeyEventArgs e)
+    {
         if (e.KeyCode == Keys.Escape && e.Shift)
         {
             e.Handled = true;
             MessageBox.Show("Program closed.", this.Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             Process.GetCurrentProcess().Kill();
-            return;
+            return true;
         }
         if (e.KeyCode == Keys.Escape)
         {
             this.Hide();
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleWindowToggle(KeyEventArgs e)
+    {
         if (e.KeyCode == Keys.Left && listBox1.SelectedItem is WindowItem windowToHide)
         {
             int i = listBox1.SelectedIndex;
@@ -735,15 +750,20 @@ public partial class MainForm : Form
             windowToHide.IsIconic = true;
             listBox1.Items.Add(windowToHide);
             e.Handled = true;
-            return;
+            return true;
         }
         if (e.KeyCode == Keys.Right && listBox1.SelectedItem is WindowItem windowToShow)
         {
             windowToShow.IsIconic = false;
             ShowWindow(windowToShow);
             e.Handled = true;
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleWindowActivation(KeyEventArgs e)
+    {
         if (e.Shift && e.KeyCode == Keys.Enter && e.Alt && listBox1.SelectedItem is WindowItem itemDebug)
         {
             StringBuilder classNameRb = new StringBuilder(256);
@@ -756,7 +776,7 @@ public partial class MainForm : Form
             """);
 
             this.Hide();
-            return;
+            return true;
         }
         if (e.Shift && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem itemInforceSaltsIncrements)
         {
@@ -778,9 +798,8 @@ public partial class MainForm : Form
                 }
             }
 
-
             this.Hide();
-            return;
+            return true;
         }
         if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
         {
@@ -798,7 +817,7 @@ public partial class MainForm : Form
                 FocusInOneWindow(windowToFocusWithControl);
             }
 
-            return;
+            return true;
         }
         if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
         {
@@ -816,8 +835,13 @@ public partial class MainForm : Form
             }
 
             this.Hide();
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleWindowRemoval(KeyEventArgs e)
+    {
         if (e.Shift && e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item3)
         {
             int i = listBox1.SelectedIndex;
@@ -825,7 +849,7 @@ public partial class MainForm : Form
             ComputeHeightSize();
             ComputeLastSelectedIndex(i);
             KillWindowProcess(item3.Handle);
-            return;
+            return true;
         }
         if (e.KeyCode == Keys.Delete && listBox1.SelectedItem is WindowItem item2)
         {
@@ -834,8 +858,13 @@ public partial class MainForm : Form
             ComputeHeightSize();
             ComputeLastSelectedIndex(i);
             CloseWindow(item2.Handle);
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleRename(KeyEventArgs e)
+    {
         if (e.KeyCode == Keys.F2 && listBox1.SelectedItem is WindowItem itemForRename)
         {
             var renameWindowModal = new RenameWindow()
@@ -847,7 +876,7 @@ public partial class MainForm : Form
 
             var renameResult = renameWindowModal.ShowDialog();
 
-            if (renameResult != DialogResult.OK) return;
+            if (renameResult != DialogResult.OK) return true;
 
             if (renameWindowModal.NewName == string.Empty)
             {
@@ -868,23 +897,30 @@ public partial class MainForm : Form
             }
 
             this.LoadWindowList();
+            return true;
         }
         if (e.KeyCode == Keys.F3)
         {
             Forms.SetWindowsAliasesForm.ShowSettings(listBox1.Items.Cast<WindowItem>());
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleViewModes(KeyEventArgs e)
+    {
         if (e.KeyCode == Keys.F10)
         {
             TogglePreviewPanel();
-            return;
+            return true;
         }
         if (e.KeyCode == Keys.F11)
         {
             isOneWindowMode = !isOneWindowMode;
             UpdateOneWindowModeIndicator();
-            return;
+            return true;
         }
+        return false;
     }
 
     private void ComputeLastSelectedIndex(int i)

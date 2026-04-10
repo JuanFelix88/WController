@@ -17,27 +17,7 @@ public static class WinHelper
     /// <param name="windowItem">O item da janela</param>
     /// <returns>O caminho completo do executável ou string vazia se não for possível obter</returns>
     public static string GetPathFrom(MainForm.WindowItem windowItem)
-    {
-        if (windowItem == null || windowItem.Handle == IntPtr.Zero)
-            return string.Empty;
-
-        try
-        {
-            GetWindowThreadProcessId(windowItem.Handle, out uint processId);
-            
-            if (processId == 0)
-                return string.Empty;
-
-            using (Process process = Process.GetProcessById((int)processId))
-            {
-                return process.MainModule?.FileName ?? string.Empty;
-            }
-        }
-        catch (Exception)
-        {
-            return string.Empty;
-        }
-    }
+        => windowItem is null ? string.Empty : GetPathFromHandle(windowItem.Handle);
 
     /// <summary>
     /// Obtém o caminho completo do executável associado ao handle da janela.
@@ -45,26 +25,20 @@ public static class WinHelper
     /// <param name="hWnd">O handle da janela</param>
     /// <returns>O caminho completo do executável ou string vazia se não for possível obter</returns>
     public static string GetPathFromHandle(IntPtr hWnd)
+        => TryGetProcessPath(hWnd) ?? string.Empty;
+
+    private static string? TryGetProcessPath(IntPtr hWnd)
     {
-        if (hWnd == IntPtr.Zero)
-            return string.Empty;
+        if (hWnd == IntPtr.Zero) return null;
 
         try
         {
-            GetWindowThreadProcessId(hWnd, out uint processId);
-            
-            if (processId == 0)
-                return string.Empty;
-
-            using (Process process = Process.GetProcessById((int)processId))
-            {
-                return process.MainModule?.FileName ?? string.Empty;
-            }
+            GetWindowThreadProcessId(hWnd, out var processId);
+            if (processId == 0) return null;
+            using var process = Process.GetProcessById((int)processId);
+            return process.MainModule?.FileName;
         }
-        catch (Exception)
-        {
-            return string.Empty;
-        }
+        catch { return null; }
     }
 
     public static string GetSoftwareNameFromPath(string path)

@@ -6,9 +6,9 @@ namespace WController.Components;
 
 public class DarkComboBox : ComboBox
 {
-    private readonly Color DarkBackColor = Color.FromArgb(50, 50, 50);
-    private readonly Color DarkForeColor = Color.White;
-    private readonly Color BorderColor = Color.FromArgb(70, 70, 70);
+    private static readonly Color DarkBackColor = Color.FromArgb(50, 50, 50);
+    private static readonly Color DarkForeColor = Color.White;
+    private static readonly Color SelectedBackColor = Color.FromArgb(70, 70, 70);
 
     public Func<object, (Image? Icon, string Title)>? ItemMapper { get; set; }
 
@@ -39,10 +39,8 @@ public class DarkComboBox : ComboBox
         }
 
         Color backColor = (e.State & DrawItemState.Selected) == DrawItemState.Selected
-            ? Color.FromArgb(70, 70, 70)
+            ? SelectedBackColor
             : DarkBackColor;
-
-        Color foreColor = DarkForeColor;
 
         using (SolidBrush bgBrush = new SolidBrush(backColor))
             e.Graphics.FillRectangle(bgBrush, e.Bounds);
@@ -58,14 +56,9 @@ public class DarkComboBox : ComboBox
         }
 
         Rectangle textRect = new Rectangle(textX, e.Bounds.Y, e.Bounds.Width - textX, e.Bounds.Height);
-        TextRenderer.DrawText(e.Graphics, text, Font, textRect, foreColor,
+        TextRenderer.DrawText(e.Graphics, text, Font, textRect, DarkForeColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
         e.DrawFocusRectangle();
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        base.OnPaint(e);
     }
 }
