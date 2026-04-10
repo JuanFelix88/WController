@@ -11,6 +11,7 @@ public class WindowConfigurable
     public string ProgramPath { get; set; } = string.Empty;
     public MatchMode MatchMode { get; set; } = MatchMode.Path;
     public string RegexPattern { get; set; } = string.Empty;
+    public string IconPath { get; set; } = string.Empty;
 
     private System.Text.RegularExpressions.Regex? _compiledRegex;
 

@@ -20,4 +20,28 @@ internal static class Resizer
         }
         return destImage;
     }
+
+    public static Image? ResizeImageFromFile(string filePath, int width, int height)
+    {
+        try
+        {
+            Image source;
+            if (filePath.EndsWith(".ico", System.StringComparison.OrdinalIgnoreCase))
+            {
+                using (var icon = new System.Drawing.Icon(filePath))
+                    source = icon.ToBitmap();
+            }
+            else
+            {
+                source = Image.FromFile(filePath);
+            }
+
+            using (source)
+                return ResizeImage(source, width, height);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

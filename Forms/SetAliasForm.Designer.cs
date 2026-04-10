@@ -36,6 +36,10 @@
             this.checkBoxRegex = new System.Windows.Forms.CheckBox();
             this.textBoxRegex = new System.Windows.Forms.TextBox();
             this.labelRegex = new System.Windows.Forms.Label();
+            this.pictureBoxIcon = new System.Windows.Forms.PictureBox();
+            this.buttonIcon = new System.Windows.Forms.Button();
+            this.labelIcon = new System.Windows.Forms.Label();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxIcon)).BeginInit();
             this.SuspendLayout();
             // 
             // label1
@@ -56,7 +60,7 @@
             this.buttonOk.FlatAppearance.BorderSize = 0;
             this.buttonOk.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.buttonOk.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(230)))), ((int)(((byte)(230)))), ((int)(((byte)(230)))));
-            this.buttonOk.Location = new System.Drawing.Point(15, 155);
+            this.buttonOk.Location = new System.Drawing.Point(15, 185);
             this.buttonOk.Name = "buttonOk";
             this.buttonOk.Size = new System.Drawing.Size(257, 23);
             this.buttonOk.TabIndex = 5;
@@ -132,12 +136,51 @@
             this.labelRegex.Text = "(matches window title)";
             this.labelRegex.Visible = false;
             // 
+            // pictureBoxIcon
+            // 
+            this.pictureBoxIcon.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
+            this.pictureBoxIcon.Location = new System.Drawing.Point(52, 76);
+            this.pictureBoxIcon.Name = "pictureBoxIcon";
+            this.pictureBoxIcon.Size = new System.Drawing.Size(24, 24);
+            this.pictureBoxIcon.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
+            this.pictureBoxIcon.TabIndex = 8;
+            this.pictureBoxIcon.TabStop = false;
+            // 
+            // buttonIcon
+            // 
+            this.buttonIcon.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(90)))), ((int)(((byte)(90)))), ((int)(((byte)(90)))));
+            this.buttonIcon.FlatAppearance.BorderColor = System.Drawing.Color.Black;
+            this.buttonIcon.FlatAppearance.BorderSize = 0;
+            this.buttonIcon.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.buttonIcon.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(230)))), ((int)(((byte)(230)))), ((int)(((byte)(230)))));
+            this.buttonIcon.Location = new System.Drawing.Point(82, 77);
+            this.buttonIcon.Name = "buttonIcon";
+            this.buttonIcon.Size = new System.Drawing.Size(55, 22);
+            this.buttonIcon.TabIndex = 9;
+            this.buttonIcon.Text = "Icon...";
+            this.buttonIcon.UseVisualStyleBackColor = false;
+            this.buttonIcon.Click += new System.EventHandler(this.OnIconClick);
+            // 
+            // labelIcon
+            // 
+            this.labelIcon.AutoSize = true;
+            this.labelIcon.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelIcon.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(160)))), ((int)(((byte)(160)))), ((int)(((byte)(160)))));
+            this.labelIcon.Location = new System.Drawing.Point(143, 81);
+            this.labelIcon.Name = "labelIcon";
+            this.labelIcon.Size = new System.Drawing.Size(38, 13);
+            this.labelIcon.TabIndex = 10;
+            this.labelIcon.Text = "(none)";
+            // 
             // SetAliasForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(45)))), ((int)(((byte)(45)))), ((int)(((byte)(45)))));
-            this.ClientSize = new System.Drawing.Size(284, 189);
+            this.ClientSize = new System.Drawing.Size(284, 219);
+            this.Controls.Add(this.labelIcon);
+            this.Controls.Add(this.buttonIcon);
+            this.Controls.Add(this.pictureBoxIcon);
             this.Controls.Add(this.labelRegex);
             this.Controls.Add(this.textBoxRegex);
             this.Controls.Add(this.checkBoxRegex);
@@ -150,6 +193,7 @@
             this.ShowIcon = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Set alias to Window";
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxIcon)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -165,5 +209,8 @@
         private System.Windows.Forms.CheckBox checkBoxRegex;
         private System.Windows.Forms.TextBox textBoxRegex;
         private System.Windows.Forms.Label labelRegex;
+        private System.Windows.Forms.PictureBox pictureBoxIcon;
+        private System.Windows.Forms.Button buttonIcon;
+        private System.Windows.Forms.Label labelIcon;
     }
 }

@@ -10,11 +10,13 @@ public partial class SetAliasForm : Form
 {
     public bool IsOriginalSuggestName { get; set; } = false;
     public string SuggestShortcut { get; set; } = string.Empty;
+    public string IconPath { get; set; } = string.Empty;
     public MatchMode MatchMode => checkBoxRegex.Checked ? MatchMode.Regex : MatchMode.Path;
     public string RegexPattern => textBoxRegex.Text;
-    public MainForm.WindowItem? SelectedWindow => cbPrograms.Items[cbPrograms.SelectedIndex] as MainForm.WindowItem;
 
+    public MainForm.WindowItem? SelectedWindow => cbPrograms.Items[cbPrograms.SelectedIndex] as MainForm.WindowItem;
     public string Shortcut => textBoxShortcut.Text.ToUpper();
+
     public SetAliasForm(IEnumerable<MainForm.WindowItem> suggestWndows)
     {
         InitializeComponent();
@@ -52,6 +54,27 @@ public partial class SetAliasForm : Form
     {
         textBoxShortcut.Text = SuggestShortcut;
         OnRegexToggled(this, EventArgs.Empty);
+
+        if (!string.IsNullOrEmpty(IconPath))
+        {
+            pictureBoxIcon.Image = Util.Resizer.ResizeImageFromFile(IconPath, 24, 24);
+            labelIcon.Text = System.IO.Path.GetFileName(IconPath);
+        }
+    }
+
+    private void OnIconClick(object sender, EventArgs e)
+    {
+        using (OpenFileDialog dlg = new OpenFileDialog())
+        {
+            dlg.Title = "Select Icon";
+            dlg.Filter = "Icon files (*.ico;*.png)|*.ico;*.png";
+            if (dlg.ShowDialog() == DialogResult.OK)
+            {
+                IconPath = dlg.FileName;
+                pictureBoxIcon.Image = Util.Resizer.ResizeImageFromFile(dlg.FileName, 24, 24);
+                labelIcon.Text = System.IO.Path.GetFileName(dlg.FileName);
+            }
+        }
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -86,6 +109,7 @@ public partial class SetAliasForm : Form
                     Shortcut = form.Shortcut,
                     MatchMode = MatchMode.Regex,
                     RegexPattern = form.RegexPattern,
+                    IconPath = form.IconPath,
                 };
             }
 
@@ -96,6 +120,7 @@ public partial class SetAliasForm : Form
                 ProgramPath = programPath,
                 Title = softwareName,
                 Shortcut = form.Shortcut,
+                IconPath = form.IconPath,
             };
         }
         return null;
@@ -119,12 +144,14 @@ public partial class SetAliasForm : Form
         form.cbPrograms.Visible = window.MatchMode != MatchMode.Regex;
         form.cbPrograms.Enabled = false;
         form.Text = $"Edit alias to {window.Title}";
+        form.IconPath = window.IconPath;
 
         if (form.ShowDialog() == DialogResult.OK)
         {
             window.Shortcut = form.Shortcut;
             window.MatchMode = form.MatchMode;
             window.RegexPattern = form.RegexPattern;
+            window.IconPath = form.IconPath;
             if (form.MatchMode == MatchMode.Regex)
             {
                 window.Title = form.RegexPattern;

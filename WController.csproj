@@ -95,6 +95,7 @@
     <Compile Include="Util\GlobalHotkeyMapper.cs" />
     <Compile Include="Util\IconHelper.cs" />
     <Compile Include="Util\ItemSelectable.cs" />
+    <Compile Include="Util\IconCache.cs" />
     <Compile Include="Util\Resizer.cs" />
     <Compile Include="SearchItemsForm.cs">
       <SubType>Form</SubType>

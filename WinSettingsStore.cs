@@ -11,7 +11,7 @@ public static class WinSettingsStore
 {
     private static readonly string _settingsPath;
     private const string HEADER = "WSET";
-    private const int VERSION = 2;
+    private const int VERSION = 3;
     private static List<WindowConfigurable> cachedWindows = new List<WindowConfigurable>();
     private static DateTime lastCachedRead = DateTime.MinValue;
 
@@ -46,6 +46,7 @@ public static class WinSettingsStore
                     writer.Write(window.ProgramPath ?? string.Empty);
                     writer.Write((byte)window.MatchMode);
                     writer.Write(window.RegexPattern ?? string.Empty);
+                    writer.Write(window.IconPath ?? string.Empty);
                 }
             }
         }
@@ -90,11 +91,17 @@ public static class WinSettingsStore
 
                         MatchMode matchMode = MatchMode.Path;
                         string regexPattern = string.Empty;
+                        string iconPath = string.Empty;
 
                         if (version >= 2)
                         {
                             matchMode = (MatchMode)reader.ReadByte();
                             regexPattern = reader.ReadString();
+                        }
+
+                        if (version >= 3)
+                        {
+                            iconPath = reader.ReadString();
                         }
 
                         if (string.IsNullOrEmpty(programPath) && matchMode == MatchMode.Path)
@@ -106,7 +113,8 @@ public static class WinSettingsStore
                             Title = title,
                             ProgramPath = programPath,
                             MatchMode = matchMode,
-                            RegexPattern = regexPattern
+                            RegexPattern = regexPattern,
+                            IconPath = iconPath
                         });
                     }
                     catch (Exception ex)

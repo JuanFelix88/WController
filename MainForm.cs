@@ -366,6 +366,7 @@ public partial class MainForm : Form
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
     private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
     private Dictionary<IntPtr, string> windowsPaths = new Dictionary<IntPtr, string>();
+    private bool isPreviewVisible = true;
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
     private Image DefaultWindowIconImageIconic;
@@ -378,6 +379,7 @@ public partial class MainForm : Form
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
     private bool isOneWindowMode = false;
+    private bool useDwmRoundedCorners = false;
 
     public MainForm()
     {
@@ -443,6 +445,9 @@ public partial class MainForm : Form
         if (previewHandle != IntPtr.Zero)
             WindowPreview.ClosePreview(previewHandle);
 
+        if (!isPreviewVisible)
+            return;
+
         if (listBox1.SelectedIndex == (-1) || listBox1.SelectedItem is null)
         {
             lbPreview.Text = "No selected Window";
@@ -461,6 +466,43 @@ public partial class MainForm : Form
 
         lbPreview.Text = string.Empty;
         lbSelectedWindow.Text = selectedWindow?.Title;
+    }
+
+    private int fullWidth;
+
+    private void TogglePreviewPanel()
+    {
+        isPreviewVisible = !isPreviewVisible;
+
+        if (!isPreviewVisible)
+        {
+            if (previewHandle != IntPtr.Zero)
+            {
+                WindowPreview.ClosePreview(previewHandle);
+                previewHandle = IntPtr.Zero;
+            }
+
+            pnPreview.Visible = false;
+            fullWidth = this.Width;
+            this.Width = pnLists.Width + this.Padding.Horizontal;
+            this.CenterToScreen();
+        }
+        else
+        {
+            pnPreview.Visible = true;
+            this.Width = fullWidth;
+            this.CenterToScreen();
+
+            if (listBox1.SelectedItem is WindowItem selectedWindow)
+            {
+                Rectangle previewRect = GetProportionalRectangle(selectedWindow.Handle, previewRectangle);
+                previewHandle = WindowPreview.ShowPreview(
+                    this.Handle,
+                    selectedWindow.Handle,
+                    previewRect,
+                    245);
+            }
+        }
     }
 
     private void OnTemporaryTimerCheckerElapsed(object sender, System.Timers.ElapsedEventArgs e)
@@ -833,6 +875,11 @@ public partial class MainForm : Form
             Forms.SetWindowsAliasesForm.ShowSettings(listBox1.Items.Cast<WindowItem>());
             return;
         }
+        if (e.KeyCode == Keys.F10)
+        {
+            TogglePreviewPanel();
+            return;
+        }
         if (e.KeyCode == Keys.F11)
         {
             isOneWindowMode = !isOneWindowMode;
@@ -949,6 +996,7 @@ public partial class MainForm : Form
                 e.Graphics.FillEllipse(whiteBrush, circleRect);
             }
         }
+
     }
 
     //private void ListBox1_DrawItem(object sender, DrawItemEventArgs e)
@@ -1011,12 +1059,21 @@ public partial class MainForm : Form
 
     private void MainForm_Load(object sender, EventArgs e)
     {
-        ApplyRoundedRegion(20);
+        // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
+        useDwmRoundedCorners = WindowEffects.TrySetAttribute(this.Handle, 33, 2);
+
+        if (!useDwmRoundedCorners)
+        {
+            ApplyRoundedRegion(20);
+        }
     }
 
     private void MainForm_Resize(object sender, EventArgs e)
     {
-        ApplyRoundedRegion(20);
+        if (!useDwmRoundedCorners)
+        {
+            ApplyRoundedRegion(20);
+        }
     }
 
     public void KillWindowProcess(IntPtr hWnd)
@@ -1173,6 +1230,16 @@ public partial class MainForm : Form
                     if (matchedSetting is not null)
                     {
                         shortcut = matchedSetting.Shortcut;
+
+                        if (!string.IsNullOrEmpty(matchedSetting.IconPath))
+                        {
+                            var customIcon = Util.IconCache.GetIcon(matchedSetting.IconPath);
+                            if (customIcon is not null)
+                            {
+                                images.Icon = customIcon;
+                                images.IconIconic = customIcon;
+                            }
+                        }
                     }
                 }
 

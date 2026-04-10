@@ -79,6 +79,12 @@ public static class WindowEffects
         DwmSetWindowAttribute(hwnd, attr, ref value, Marshal.SizeOf(typeof(int)));
     }
 
+    public static bool TrySetAttribute(IntPtr hwnd, int attr, int value)
+    {
+        int result = DwmSetWindowAttribute(hwnd, attr, ref value, Marshal.SizeOf(typeof(int)));
+        return result >= 0;
+    }
+
     public static void SetTaskbarProgress(IntPtr hwnd, ulong current, ulong total)
     {
         taskbarList.SetProgressValue(hwnd, current, total);
