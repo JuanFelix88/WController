@@ -1197,8 +1197,8 @@ public partial class MainForm : Form
 
     private void LoadWindowList()
     {
+        listBox1.BeginUpdate();
         listBox1.Items.Clear();
-        listBox1.SuspendLayout();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
 
@@ -1289,29 +1289,28 @@ public partial class MainForm : Form
 
         if (listBox1.Items.Count > 1)
         {
-            var list = listBox1.Items.Cast<WindowItem>().ToList();
-            var activeWindow = (WindowItem)listBox1.Items[0];
+            int itemCount = listBox1.Items.Count;
+            var items = new WindowItem[itemCount];
+            for (int i = 0; i < itemCount; i++)
+                items[i] = (WindowItem)listBox1.Items[i];
 
+            var activeWindow = items[0];
             listBox1.Items.Clear();
+
             int deltaChecks = 4;
-            double average = list
-                .Where(itemForAverage => itemForAverage != activeWindow)
-                .Average(itemForAverage => itemForAverage.CountReferences);
+            double sum = 0;
+            for (int i = 1; i < itemCount; i++)
+                sum += items[i].CountReferences;
+            double average = sum / (itemCount - 1);
 
-            list
-                .Select(x =>
-                {
-                    if (x == activeWindow) return x;
+            for (int i = 1; i < itemCount; i++)
+                items[i].HighRelevance = (items[i].CountReferences - deltaChecks) > average;
 
-                    x.HighRelevance = (x.CountReferences - deltaChecks) > average;
-                    return x;
-                })
-                .OrderBy(item => item.TypeWindow)
-                .ToList()
-                .ForEach(item => listBox1.Items.Add(item));
+            Array.Sort(items, (a, b) => a.TypeWindow.CompareTo(b.TypeWindow));
+            listBox1.Items.AddRange(items);
         }
 
-        listBox1.ResumeLayout();
+        listBox1.EndUpdate();
         ComputeHeightSize();
     }
 
