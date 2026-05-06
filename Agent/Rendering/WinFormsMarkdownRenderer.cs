@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -508,7 +509,7 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
 
     private Control CreateCodeBlockControl(CodeBlock block, int width)
     {
-        Panel panel = new Panel
+        RoundedPanel panel = new RoundedPanel(8)
         {
             Width = width,
             Height = 1,
@@ -523,7 +524,7 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
             Label languageLabel = new Label
             {
                 AutoSize = true,
-                Location = new Point(12, y),
+                Location = new Point(14, y),
                 Text = block.Language,
                 Font = GetTextFont(8.5f, FontStyle.Bold),
                 ForeColor = AccentColor,
@@ -536,10 +537,10 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
             y = languageLabel.Bottom + 6;
         }
 
-        int codeWidth = Math.Max(120, width - 24);
+        int codeWidth = Math.Max(120, width - 28);
         RichTextBox codeBox = new RichTextBox
         {
-            Location = new Point(12, y),
+            Location = new Point(14, y),
             Width = codeWidth,
             Height = MeasureCodeHeight(block.Code, 10f),
             BorderStyle = BorderStyle.None,
@@ -567,35 +568,37 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
             Width = width,
             Height = 1,
             BackColor = BackgroundColor,
-            Margin = new Padding(0, 0, 0, 10),
+            Margin = new Padding(0, 4, 0, 10),
             Padding = Padding.Empty,
         };
 
         int y = 0;
+        int baseIndent = 12;
         foreach (ListItemBlock item in list.Items)
         {
-            int indent = item.IndentLevel * 20;
+            int indent = baseIndent + item.IndentLevel * 20;
             int markerWidth = list.Ordered ? 28 : 20;
 
             Label marker = new Label
             {
                 AutoSize = true,
-                Location = new Point(indent, y + 1),
+                Location = new Point(indent, y + 2),
                 Text = item.Marker,
-                Font = GetTextFont(11f, FontStyle.Bold),
+                Font = GetTextFont(10.5f, FontStyle.Bold),
                 ForeColor = AccentColor,
                 BackColor = BackgroundColor,
                 Margin = Padding.Empty,
                 UseMnemonic = false,
             };
 
-            Control content = CreateInlineTextControl(item.Text, Math.Max(120, width - indent - markerWidth - 8), 11f, FontStyle.Regular, BackgroundColor);
-            content.Location = new Point(indent + markerWidth, y);
+            int contentWidth = Math.Max(120, width - indent - markerWidth - 16);
+            Control content = CreateInlineTextControl(item.Text, contentWidth, 10.5f, FontStyle.Regular, BackgroundColor);
+            content.Location = new Point(indent + markerWidth, y + 1);
             content.Margin = Padding.Empty;
 
             panel.Controls.Add(marker);
             panel.Controls.Add(content);
-            y = Math.Max(marker.Bottom, content.Bottom) + 4;
+            y = Math.Max(marker.Bottom, content.Bottom) + 6;
         }
 
         panel.Height = Math.Max(y, 1);
@@ -628,11 +631,11 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
 
     private Control CreateQuoteControl(QuoteBlock quote, int width)
     {
-        Panel panel = new Panel
+        RoundedPanel panel = new RoundedPanel(6)
         {
             Width = width,
             Height = 1,
-            BackColor = BackgroundColor,
+            BackColor = Color.FromArgb(36, 36, 36),
             Margin = new Padding(0, 0, 0, 12),
             Padding = Padding.Empty,
         };
@@ -647,8 +650,8 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
         };
         panel.Controls.Add(border);
 
-        int y = 0;
-        int contentWidth = Math.Max(120, width - 18);
+        int y = 8;
+        int contentWidth = Math.Max(120, width - 28);
         for (int index = 0; index < quote.Lines.Count; index++)
         {
             string line = quote.Lines[index];
@@ -658,20 +661,20 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
                 continue;
             }
 
-            Control content = CreateInlineTextControl(line, contentWidth, 11f, FontStyle.Italic, BackgroundColor);
-            content.Location = new Point(16, y);
+            Control content = CreateInlineTextControl(line, contentWidth, 11f, FontStyle.Italic, Color.FromArgb(36, 36, 36));
+            content.Location = new Point(18, y);
             content.Margin = Padding.Empty;
             panel.Controls.Add(content);
             y = content.Bottom + 4;
         }
 
-        if (y <= 0)
+        if (y <= 8)
         {
-            y = GetTextFont(11f, FontStyle.Italic).Height + 4;
+            y = GetTextFont(11f, FontStyle.Italic).Height + 12;
         }
 
-        border.Height = Math.Max(1, y - 2);
-        panel.Height = y;
+        border.Height = Math.Max(1, y - 4);
+        panel.Height = y + 6;
         return panel;
     }
 
@@ -871,20 +874,34 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
         }
     }
 
-    private Label CreateInlineCodeLabel(string text, float fontSize, int width)
+    private Control CreateInlineCodeLabel(string text, float fontSize, int width)
     {
-        return new Label
+        RoundedPanel pill = new RoundedPanel(4)
+        {
+            AutoSize = false,
+            BackColor = CodeBackgroundColor,
+            Margin = new Padding(1, 0, 1, 0),
+            Padding = Padding.Empty,
+        };
+
+        Label label = new Label
         {
             AutoSize = true,
-            MaximumSize = new Size(width, 0),
+            MaximumSize = new Size(Math.Max(60, width - 10), 0),
             Text = text,
             Font = GetCodeFont(fontSize, FontStyle.Regular),
             ForeColor = TextColor,
             BackColor = CodeBackgroundColor,
             Margin = Padding.Empty,
-            Padding = new Padding(4, 2, 4, 2),
+            Padding = new Padding(5, 3, 5, 3),
             UseMnemonic = false,
+            Location = new Point(0, 0),
         };
+
+        pill.Controls.Add(label);
+        pill.Width = label.PreferredWidth + 2;
+        pill.Height = label.PreferredHeight + 2;
+        return pill;
     }
 
     private static bool ContainsLink(IReadOnlyList<InlineSegment> segments)
@@ -1396,5 +1413,56 @@ internal sealed class WinFormsMarkdownRenderer : IMarkdownRenderer
         public FlowLayoutPanel? Host { get; set; }
 
         public bool IsRendering { get; set; }
+    }
+
+    private sealed class RoundedPanel : Panel
+    {
+        private readonly int radius;
+
+        public RoundedPanel(int cornerRadius)
+        {
+            radius = cornerRadius;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle rect = new Rectangle(0, 0, Width, Height);
+            using (GraphicsPath path = CreateRoundedPath(rect, radius))
+            using (SolidBrush brush = new SolidBrush(BackColor))
+            {
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            ApplyRegion();
+        }
+
+        private void ApplyRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            Rectangle rect = new Rectangle(0, 0, Width, Height);
+            using (GraphicsPath path = CreateRoundedPath(rect, radius))
+            {
+                Region = new Region(path);
+            }
+        }
+
+        private static GraphicsPath CreateRoundedPath(Rectangle rect, int r)
+        {
+            int d = r * 2;
+            GraphicsPath path = new GraphicsPath();
+            path.StartFigure();
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
     }
 }

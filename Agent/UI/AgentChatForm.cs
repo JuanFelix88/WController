@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -51,7 +52,7 @@ public partial class AgentChatForm : Form
     private Panel chatArea = null!;
     private FlowLayoutPanel chatFlow = null!;
     private Panel inputArea = null!;
-    private TextBox inputTextBox = null!;
+    private RichTextBox inputTextBox = null!;
     private ShimmerLabel shimmerLabel = null!;
     private Label statusLabel = null!;
 
@@ -217,32 +218,11 @@ public partial class AgentChatForm : Form
             BackColor = InputBgColor,
             BorderStyle = BorderStyle.FixedSingle,
             Location = new Point(66, 72),
-            Width = 380
+            Width = 500,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         modelsTextBox.LostFocus += (s, e) => SaveConfigFromUI();
         topBar.Controls.Add(modelsTextBox);
-
-        modelLabel = new Label
-        {
-            Text = "gpt-4o",
-            Font = new Font("Consolas", 8.5f, FontStyle.Bold),
-            ForeColor = AccentColor,
-            AutoSize = true,
-            Cursor = Cursors.Hand,
-            Location = new Point(454, 74)
-        };
-        modelLabel.Click += (s, e) => ShowModelPicker();
-        topBar.Controls.Add(modelLabel);
-
-        var modelHint = new Label
-        {
-            Text = "Ctrl+Alt+.",
-            Font = new Font("Consolas", 7f),
-            ForeColor = DimTextColor,
-            AutoSize = true,
-            Location = new Point(454, 90)
-        };
-        topBar.Controls.Add(modelHint);
 
         this.Controls.Add(topBar);
 
@@ -255,9 +235,9 @@ public partial class AgentChatForm : Form
         inputArea = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 80,
+            Height = 100,
             BackColor = BgColor,
-            Padding = new Padding(12, 8, 12, 8)
+            Padding = new Padding(12, 8, 12, 6)
         };
 
         shimmerLabel = new ShimmerLabel
@@ -268,28 +248,49 @@ public partial class AgentChatForm : Form
         };
         inputArea.Controls.Add(shimmerLabel);
 
-        statusLabel = new Label
+        // Bottom row: model selector + hints
+        var bottomRow = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 16,
+            Height = 20,
+            BackColor = BgColor
+        };
+
+        modelLabel = new Label
+        {
+            Text = "gpt-4o",
+            Font = new Font("Consolas", 8.5f, FontStyle.Bold),
+            ForeColor = AccentColor,
+            AutoSize = true,
+            Cursor = Cursors.Hand,
+            Location = new Point(0, 2)
+        };
+        modelLabel.Click += (s, e) => ShowModelPicker();
+        bottomRow.Controls.Add(modelLabel);
+
+        statusLabel = new Label
+        {
+            Dock = DockStyle.Right,
+            Width = 420,
             Font = new Font("Segoe UI", 7.5f),
             ForeColor = DimTextColor,
-            Text = "Enter to send · Shift+Enter new line · Ctrl+Backspace stop · Esc close",
-            TextAlign = ContentAlignment.MiddleLeft
+            Text = "Enter send · Shift+Enter newline · Ctrl+Bksp stop · Ctrl+Alt+. model · Esc close",
+            TextAlign = ContentAlignment.MiddleRight
         };
-        inputArea.Controls.Add(statusLabel);
+        bottomRow.Controls.Add(statusLabel);
 
-        inputTextBox = new TextBox
+        inputArea.Controls.Add(bottomRow);
+
+        inputTextBox = new RichTextBox
         {
             Dock = DockStyle.Fill,
             Font = new Font("Segoe UI", 10.5f),
             ForeColor = TextColor,
             BackColor = InputBgColor,
-            BorderStyle = BorderStyle.FixedSingle,
-            Multiline = true,
-            WordWrap = true,
-            ScrollBars = ScrollBars.Vertical,
-            AcceptsReturn = false
+            BorderStyle = BorderStyle.None,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            DetectUrls = false,
+            AcceptsTab = false
         };
         inputTextBox.KeyDown += OnInputKeyDown;
         inputArea.Controls.Add(inputTextBox);
@@ -300,12 +301,12 @@ public partial class AgentChatForm : Form
         bottomSep.BringToFront();
 
         // === CHAT AREA (center) ===
-        chatArea = new Panel
+        chatArea = new SubtleScrollPanel
         {
             Dock = DockStyle.Fill,
             BackColor = BgColor,
             AutoScroll = true,
-            Padding = new Padding(8)
+            Padding = new Padding(16, 12, 16, 12)
         };
 
         chatFlow = new FlowLayoutPanel
@@ -316,7 +317,7 @@ public partial class AgentChatForm : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             BackColor = BgColor,
-            Padding = new Padding(4)
+            Padding = new Padding(8, 120, 8, 40)
         };
         chatArea.Controls.Add(chatFlow);
         this.Controls.Add(chatArea);
@@ -441,7 +442,10 @@ public partial class AgentChatForm : Form
             };
         }
 
-        menu.Show(modelLabel, new Point(0, modelLabel.Height));
+        // Show above the model label (which is now in the bottom bar)
+        var screenPoint = modelLabel.PointToScreen(new Point(0, 0));
+        var formPoint = this.PointToClient(screenPoint);
+        menu.Show(this, new Point(formPoint.X, formPoint.Y - (models.Count * 26) - 4));
     }
 
     // Dark renderer for ContextMenuStrip
@@ -473,17 +477,7 @@ public partial class AgentChatForm : Form
             return;
         }
 
-        // Shift+Enter: new line
-        if (e.Shift && e.KeyCode == Keys.Enter)
-        {
-            e.SuppressKeyPress = true;
-            int pos = inputTextBox.SelectionStart;
-            inputTextBox.Text = inputTextBox.Text.Insert(pos, Environment.NewLine);
-            inputTextBox.SelectionStart = pos + Environment.NewLine.Length;
-            return;
-        }
-
-        // Enter: send
+        // Enter: send (without Shift)
         if (e.KeyCode == Keys.Enter && !e.Shift)
         {
             e.SuppressKeyPress = true;
@@ -549,7 +543,7 @@ public partial class AgentChatForm : Form
         chatFlow.Controls.Add(responsePanel);
 
         shimmerLabel.IsShimmering = true;
-        inputTextBox.Enabled = false;
+        inputTextBox.ReadOnly = true;
 
         var cts = new CancellationTokenSource();
         session.CancellationSource = cts;
@@ -578,6 +572,7 @@ public partial class AgentChatForm : Form
 
         orchestrator.OnError += error =>
         {
+            LogError(error);
             SafeInvoke(() => AppendSystemMessage(error));
         };
 
@@ -586,7 +581,7 @@ public partial class AgentChatForm : Form
             SafeInvoke(() =>
             {
                 shimmerLabel.IsShimmering = false;
-                inputTextBox.Enabled = true;
+                inputTextBox.ReadOnly = false;
                 inputTextBox.Focus();
                 ScrollToBottom();
             });
@@ -603,13 +598,35 @@ public partial class AgentChatForm : Form
         }
         catch (Exception ex)
         {
+            LogError($"Error in SendMessage: {ex.Message}", ex);
             AppendSystemMessage($"Error: {ex.Message}");
         }
         finally
         {
             shimmerLabel.IsShimmering = false;
-            inputTextBox.Enabled = true;
+            inputTextBox.ReadOnly = false;
             inputTextBox.Focus();
+        }
+    }
+
+    internal static void LogError(string message, Exception? ex = null)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "WController");
+            Directory.CreateDirectory(dir);
+            var logPath = Path.Combine(dir, "crash.log");
+            var entry = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss UTC}] {message}{Environment.NewLine}";
+            if (ex != null)
+                entry += $"{ex}{Environment.NewLine}";
+            entry += Environment.NewLine;
+            File.AppendAllText(logPath, entry);
+        }
+        catch
+        {
+            // Swallow - logging must never throw
         }
     }
 
@@ -617,7 +634,7 @@ public partial class AgentChatForm : Form
     {
         session.Stop();
         shimmerLabel.IsShimmering = false;
-        inputTextBox.Enabled = true;
+        inputTextBox.ReadOnly = false;
         statusLabel.Text = "Agent stopped.";
     }
 
@@ -636,6 +653,16 @@ public partial class AgentChatForm : Form
             Padding = new Padding(0, 2, 0, 4)
         };
         panel.Controls.Add(label);
+
+        var separator = new Panel
+        {
+            Width = chatFlow.Width - 40,
+            Height = 2,
+            BackColor = Color.FromArgb(60, 60, 60),
+            Margin = new Padding(0, 4, 0, 0)
+        };
+        panel.Controls.Add(separator);
+
         chatFlow.Controls.Add(panel);
         ScrollToBottom();
     }
@@ -657,16 +684,37 @@ public partial class AgentChatForm : Form
 
     private void AppendToolMessage(string toolInfo, Panel parentPanel)
     {
+        var wrapper = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowOnly,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = ToolBgColor,
+            Margin = new Padding(8, 2, 0, 2)
+        };
+
+        var accentBar = new Panel
+        {
+            Width = 2,
+            Height = 20,
+            BackColor = AccentColor,
+            Margin = new Padding(0, 2, 4, 2)
+        };
+        wrapper.Controls.Add(accentBar);
+
         var toolLabel = new Label
         {
-            Text = $"  ⚡ {toolInfo}",
+            Text = $"⚡ {toolInfo}",
             Font = new Font("Consolas", 8.5f),
-            ForeColor = DimTextColor,
+            ForeColor = Color.FromArgb(160, 160, 160),
             BackColor = ToolBgColor,
             AutoSize = true,
-            Padding = new Padding(4, 2, 4, 2)
+            Padding = new Padding(0, 2, 4, 2)
         };
-        parentPanel.Controls.Add(toolLabel);
+        wrapper.Controls.Add(toolLabel);
+
+        parentPanel.Controls.Add(wrapper);
         ScrollToBottom();
     }
 
@@ -692,11 +740,67 @@ public partial class AgentChatForm : Form
             Padding = new Padding(0, 0, 0, 2)
         };
         panel.Controls.Add(roleLabel);
+
+        // Add separator at bottom when panel is added to parent
+        panel.ControlAdded += (s, e) =>
+        {
+            // Remove previous separator if exists
+            foreach (Control c in panel.Controls)
+            {
+                if (c.Tag as string == "_separator")
+                {
+                    panel.Controls.Remove(c);
+                    c.Dispose();
+                    break;
+                }
+            }
+            var sep = new Panel
+            {
+                Width = panel.Width - 16,
+                Height = 1,
+                BackColor = Color.FromArgb(50, 50, 50),
+                Margin = new Padding(0, 4, 0, 0),
+                Tag = "_separator"
+            };
+            panel.Controls.Add(sep);
+        };
+
         return panel;
+    }
+
+    private void EnsureBottomSpacer()
+    {
+        const int spacerHeight = 120;
+        Panel? spacer = null;
+        foreach (Control c in chatFlow.Controls)
+        {
+            if (c is Panel p && (string?)p.Tag == "__bottomSpacer")
+            {
+                spacer = p;
+                break;
+            }
+        }
+        if (spacer == null)
+        {
+            spacer = new Panel
+            {
+                Height = spacerHeight,
+                Width = chatFlow.Width - 20,
+                BackColor = Color.Transparent,
+                Tag = "__bottomSpacer"
+            };
+            chatFlow.Controls.Add(spacer);
+        }
+        else
+        {
+            spacer.Height = spacerHeight;
+            chatFlow.Controls.SetChildIndex(spacer, chatFlow.Controls.Count - 1);
+        }
     }
 
     private void ScrollToBottom()
     {
+        EnsureBottomSpacer();
         chatArea.ScrollControlIntoView(chatFlow);
         if (chatFlow.Controls.Count > 0)
         {
@@ -823,6 +927,143 @@ public partial class AgentChatForm : Form
         {
             folderTextBox.Text = path;
             session.WorkingDirectory = path;
+        }
+    }
+
+    // =========== Subtle scrollbar panel ===========
+
+    private class SubtleScrollPanel : Panel
+    {
+        private const int ScrollBarWidth = 6;
+        private const int WM_NCCALCSIZE = 0x0083;
+        private const int SB_VERT = 1;
+        private static readonly Color ThumbColor = Color.FromArgb(100, 255, 255, 255);
+        private static readonly Color TrackColor = Color.Transparent;
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetScrollInfo(IntPtr hWnd, int nBar, ref SCROLLINFO lpScrollInfo);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SCROLLINFO
+        {
+            public uint cbSize;
+            public uint fMask;
+            public int nMin;
+            public int nMax;
+            public uint nPage;
+            public int nPos;
+            public int nTrackPos;
+        }
+
+        private System.Windows.Forms.Timer? scrollFadeTimer;
+        private float scrollOpacity;
+        private bool scrollVisible;
+
+        public SubtleScrollPanel()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+            scrollFadeTimer = new System.Windows.Forms.Timer { Interval = 30 };
+            scrollFadeTimer.Tick += OnScrollFadeTick;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == WM_NCCALCSIZE)
+            {
+                ShowScrollBar(Handle, SB_VERT, false);
+            }
+        }
+
+        protected override void OnScroll(ScrollEventArgs se)
+        {
+            base.OnScroll(se);
+            ShowSubtleScrollbar();
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            ShowSubtleScrollbar();
+        }
+
+        private void ShowSubtleScrollbar()
+        {
+            scrollOpacity = 1f;
+            scrollVisible = true;
+            scrollFadeTimer?.Stop();
+            scrollFadeTimer?.Start();
+            Invalidate();
+        }
+
+        private void OnScrollFadeTick(object? sender, EventArgs e)
+        {
+            scrollOpacity -= 0.06f;
+            if (scrollOpacity <= 0)
+            {
+                scrollOpacity = 0;
+                scrollVisible = false;
+                scrollFadeTimer?.Stop();
+            }
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!scrollVisible || !AutoScroll) return;
+
+            var si = new SCROLLINFO
+            {
+                cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+                fMask = 0x17 // SIF_ALL
+            };
+
+            if (!GetScrollInfo(Handle, SB_VERT, ref si)) return;
+            if (si.nMax <= (int)si.nPage) return;
+
+            int trackHeight = ClientSize.Height - 4;
+            if (trackHeight <= 0) return;
+
+            float viewRatio = (float)si.nPage / (si.nMax + 1);
+            int thumbHeight = Math.Max(20, (int)(trackHeight * viewRatio));
+            float scrollRatio = (float)si.nPos / Math.Max(1, si.nMax - (int)si.nPage + 1);
+            int thumbY = 2 + (int)(scrollRatio * (trackHeight - thumbHeight));
+
+            int x = ClientSize.Width - ScrollBarWidth - 3;
+            int alpha = (int)(scrollOpacity * ThumbColor.A);
+            using (var brush = new SolidBrush(Color.FromArgb(alpha, ThumbColor)))
+            using (var path = CreateRoundedRect(x, thumbY, ScrollBarWidth, thumbHeight, 3))
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        private static GraphicsPath CreateRoundedRect(int x, int y, int w, int h, int r)
+        {
+            int d = r * 2;
+            var path = new GraphicsPath();
+            path.AddArc(x, y, d, d, 180, 90);
+            path.AddArc(x + w - d, y, d, d, 270, 90);
+            path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+            path.AddArc(x, y + h - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                scrollFadeTimer?.Stop();
+                scrollFadeTimer?.Dispose();
+                scrollFadeTimer = null;
+            }
+            base.Dispose(disposing);
         }
     }
 }
