@@ -737,39 +737,41 @@ public partial class MainForm : Form
 
     private void OnListBox1KeyDown(object sender, KeyEventArgs e)
     {
-        if (!e.Shift && !e.Control && !e.Alt &&
-            ((e.KeyCode >= Keys.A && e.KeyCode <= Keys.Z) ||
-             (e.KeyCode >= Keys.D0 && e.KeyCode <= Keys.D9)))
-        {
-            char input = char.ToLowerInvariant((char)e.KeyValue);
-            bool MatchKey(WindowItem w) =>
-                char.ToLowerInvariant((!string.IsNullOrEmpty(w.Shortcut) ? w.Shortcut[0] : w.ToStringWithoutShortcut()[0])) == input;
-
-            var matches = listBox1.Items.Cast<WindowItem>().Where(MatchKey).ToList();
-
-            if (matches.Count == 1)
-            {
-                var item = matches[0];
-                if (isOneWindowMode && !item.HighRelevance)
-                    FocusInOneWindow(item);
-                else
-                {
-                    FocusWindow(item);
-                    if (listBox1.Items.Count > 0)
-                        IncrementCount((WindowItem)listBox1.Items[0], item);
-                }
-                this.Hide();
-                e.Handled = true;
-                return;
-            }
-        }
-
+        if (TryHandleKeybindForSingleMatchWindow(e)) return;
         if (TryHandleAppExit(e)) return;
         if (TryHandleWindowToggle(e)) return;
         if (TryHandleWindowActivation(e)) return;
         if (TryHandleWindowRemoval(e)) return;
         if (TryHandleRename(e)) return;
         if (TryHandleViewModes(e)) return;
+    }
+
+    private bool TryHandleKeybindForSingleMatchWindow(KeyEventArgs e)
+    {
+        if (e.Shift || e.Control || e.Alt) return false;
+        if (!((e.KeyCode >= Keys.A && e.KeyCode <= Keys.Z) ||
+              (e.KeyCode >= Keys.D0 && e.KeyCode <= Keys.D9))) return false;
+
+        char input = char.ToLowerInvariant((char)e.KeyValue);
+        bool MatchKey(WindowItem w) =>
+            char.ToLowerInvariant((!string.IsNullOrEmpty(w.Shortcut) ? w.Shortcut[0] : w.ToStringWithoutShortcut()[0])) == input;
+
+        var matches = listBox1.Items.Cast<WindowItem>().Where(MatchKey).ToList();
+
+        if (matches.Count != 1) return false;
+
+        var item = matches[0];
+        if (isOneWindowMode && !item.HighRelevance)
+            FocusInOneWindow(item);
+        else
+        {
+            FocusWindow(item);
+            if (listBox1.Items.Count > 0)
+                IncrementCount((WindowItem)listBox1.Items[0], item);
+        }
+        this.Hide();
+        e.Handled = true;
+        return true;
     }
 
     private bool TryHandleAppExit(KeyEventArgs e)
