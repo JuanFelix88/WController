@@ -89,6 +89,17 @@ You have access to tools for reading files, writing files, searching across the 
                     {
                         ct.ThrowIfCancellationRequested();
 
+                        if (string.IsNullOrWhiteSpace(toolCall.Id))
+                        {
+                            OnError?.Invoke($"Tool call '{toolCall.Name}' came back without an id from the model API.");
+                            OnToolComplete?.Invoke(toolCall.Name, new ToolResult
+                            {
+                                Success = false,
+                                Error = "Tool call missing id"
+                            });
+                            continue;
+                        }
+
                         var tool = toolRegistry.GetTool(toolCall.Name);
                         if (tool == null)
                         {

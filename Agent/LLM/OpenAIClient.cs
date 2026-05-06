@@ -114,18 +114,25 @@ public class OpenAIClient : ILLMClient
                             int index = JsonHelper.GetInt(tc, "index");
                             if (!toolCallsAccum.ContainsKey(index))
                             {
-                                var fn = JsonHelper.GetObject(tc, "function");
-                                toolCallsAccum[index] = (
-                                    JsonHelper.GetString(tc, "id") ?? "",
-                                    fn != null ? (JsonHelper.GetString(fn, "name") ?? "") : "",
-                                    new StringBuilder()
-                                );
+                                toolCallsAccum[index] = ("", "", new StringBuilder());
                             }
 
+                            var current = toolCallsAccum[index];
                             var fnDelta = JsonHelper.GetObject(tc, "function");
+
+                            var idDelta = JsonHelper.GetString(tc, "id");
+                            if (!string.IsNullOrEmpty(idDelta))
+                                current.Id = idDelta;
+
+                            var nameDelta = fnDelta != null ? JsonHelper.GetString(fnDelta, "name") : null;
+                            if (!string.IsNullOrEmpty(nameDelta))
+                                current.Name = nameDelta;
+
                             var argFrag = fnDelta != null ? JsonHelper.GetString(fnDelta, "arguments") : null;
                             if (argFrag != null)
-                                toolCallsAccum[index].Args.Append(argFrag);
+                                current.Args.Append(argFrag);
+
+                            toolCallsAccum[index] = current;
                         }
                     }
                 }
@@ -161,6 +168,8 @@ public class OpenAIClient : ILLMClient
             {
                 dict["content"] = m.Content;
                 dict["tool_call_id"] = m.ToolCallId;
+                if (!string.IsNullOrEmpty(m.ToolName))
+                    dict["name"] = m.ToolName;
             }
             else if (m.Role == MessageRole.Assistant && m.ToolCalls != null && m.ToolCalls.Count > 0)
             {

@@ -2,7 +2,6 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -50,6 +49,7 @@ public partial class AgentChatForm : Form
     private TextBox apiUrlTextBox = null!;
     private TextBox modelsTextBox = null!;
     private Panel chatArea = null!;
+    private Panel scrollInner = null!;
     private FlowLayoutPanel chatFlow = null!;
     private Panel inputArea = null!;
     private RichTextBox inputTextBox = null!;
@@ -301,12 +301,27 @@ public partial class AgentChatForm : Form
         bottomSep.BringToFront();
 
         // === CHAT AREA (center) ===
-        chatArea = new SubtleScrollPanel
+        // Outer clipping panel - hides native scrollbar
+        chatArea = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = BgColor,
+            Padding = Padding.Empty
+        };
+
+        // Inner scrollable panel - wider than chatArea so scrollbar is off-screen
+        scrollInner = new Panel
+        {
             AutoScroll = true,
-            Padding = new Padding(16, 12, 16, 12)
+            BackColor = BgColor,
+            Padding = new Padding(16, 12, 16, 12),
+            Tag = "_scrollInner"
+        };
+        chatArea.Controls.Add(scrollInner);
+        chatArea.Resize += (s, e) =>
+        {
+            // Make inner panel wider so native scrollbar sits outside visible bounds
+            scrollInner.SetBounds(0, 0, chatArea.ClientSize.Width + SystemInformation.VerticalScrollBarWidth + 4, chatArea.ClientSize.Height);
         };
 
         chatFlow = new FlowLayoutPanel
@@ -319,7 +334,7 @@ public partial class AgentChatForm : Form
             BackColor = BgColor,
             Padding = new Padding(8, 120, 8, 40)
         };
-        chatArea.Controls.Add(chatFlow);
+        scrollInner.Controls.Add(chatFlow);
         this.Controls.Add(chatArea);
 
         // Events
@@ -514,18 +529,20 @@ public partial class AgentChatForm : Form
 
     private async void SendMessage()
     {
-        string text = inputTextBox.Text.Trim();
-        if (string.IsNullOrEmpty(text)) return;
-        if (session.IsRunning) return;
+        try
+        {
+            string text = inputTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(text)) return;
+            if (session.IsRunning) return;
 
-        var client = EnsureClient();
-        if (client == null) return;
+            var client = EnsureClient();
+            if (client == null) return;
 
-        inputTextBox.Text = string.Empty;
-        AppendUserMessage(text);
+            inputTextBox.Text = string.Empty;
+            AppendUserMessage(text);
 
-        orchestrator = new AgentOrchestrator(client, session, toolRegistry);
-        orchestrator.InitializeSession();
+            orchestrator = new AgentOrchestrator(client, session, toolRegistry);
+            orchestrator.InitializeSession();
 
         // Create a message panel for the assistant response
         var responsePanel = CreateMessagePanel("Agent", AccentColor);
@@ -606,6 +623,12 @@ public partial class AgentChatForm : Form
             shimmerLabel.IsShimmering = false;
             inputTextBox.ReadOnly = false;
             inputTextBox.Focus();
+        }
+        }
+        catch (Exception ex)
+        {
+            LogError($"Fatal error in SendMessage: {ex.Message}", ex);
+            try { AppendSystemMessage($"Fatal error: {ex.Message}"); } catch { }
         }
     }
 
@@ -741,30 +764,6 @@ public partial class AgentChatForm : Form
         };
         panel.Controls.Add(roleLabel);
 
-        // Add separator at bottom when panel is added to parent
-        panel.ControlAdded += (s, e) =>
-        {
-            // Remove previous separator if exists
-            foreach (Control c in panel.Controls)
-            {
-                if (c.Tag as string == "_separator")
-                {
-                    panel.Controls.Remove(c);
-                    c.Dispose();
-                    break;
-                }
-            }
-            var sep = new Panel
-            {
-                Width = panel.Width - 16,
-                Height = 1,
-                BackColor = Color.FromArgb(50, 50, 50),
-                Margin = new Padding(0, 4, 0, 0),
-                Tag = "_separator"
-            };
-            panel.Controls.Add(sep);
-        };
-
         return panel;
     }
 
@@ -801,20 +800,32 @@ public partial class AgentChatForm : Form
     private void ScrollToBottom()
     {
         EnsureBottomSpacer();
-        chatArea.ScrollControlIntoView(chatFlow);
+        scrollInner.ScrollControlIntoView(chatFlow);
         if (chatFlow.Controls.Count > 0)
         {
             var last = chatFlow.Controls[chatFlow.Controls.Count - 1];
-            chatArea.ScrollControlIntoView(last);
+            scrollInner.ScrollControlIntoView(last);
         }
     }
 
     private void SafeInvoke(Action action)
     {
-        if (InvokeRequired)
-            BeginInvoke(action);
-        else
-            action();
+        try
+        {
+            if (IsDisposed) return;
+            if (InvokeRequired)
+                BeginInvoke((Action)(() =>
+                {
+                    try { action(); }
+                    catch (Exception ex) { LogError("SafeInvoke callback error", ex); }
+                }));
+            else
+                action();
+        }
+        catch (Exception ex)
+        {
+            LogError("SafeInvoke error", ex);
+        }
     }
 
     // =========== Folder browsing ===========
@@ -846,6 +857,8 @@ public partial class AgentChatForm : Form
         ApplyRoundedRegion(16);
         // Update chat flow width
         chatFlow.Width = chatArea.ClientSize.Width - 16;
+        // Resize inner scroll panel to keep native scrollbar clipped
+        scrollInner.SetBounds(0, 0, chatArea.ClientSize.Width + SystemInformation.VerticalScrollBarWidth + 4, chatArea.ClientSize.Height);
         foreach (Control c in chatFlow.Controls)
         {
             if (c is FlowLayoutPanel flp)
@@ -927,143 +940,6 @@ public partial class AgentChatForm : Form
         {
             folderTextBox.Text = path;
             session.WorkingDirectory = path;
-        }
-    }
-
-    // =========== Subtle scrollbar panel ===========
-
-    private class SubtleScrollPanel : Panel
-    {
-        private const int ScrollBarWidth = 6;
-        private const int WM_NCCALCSIZE = 0x0083;
-        private const int SB_VERT = 1;
-        private static readonly Color ThumbColor = Color.FromArgb(100, 255, 255, 255);
-        private static readonly Color TrackColor = Color.Transparent;
-
-        [DllImport("user32.dll")]
-        private static extern bool ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
-
-        [DllImport("user32.dll")]
-        private static extern bool GetScrollInfo(IntPtr hWnd, int nBar, ref SCROLLINFO lpScrollInfo);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct SCROLLINFO
-        {
-            public uint cbSize;
-            public uint fMask;
-            public int nMin;
-            public int nMax;
-            public uint nPage;
-            public int nPos;
-            public int nTrackPos;
-        }
-
-        private System.Windows.Forms.Timer? scrollFadeTimer;
-        private float scrollOpacity;
-        private bool scrollVisible;
-
-        public SubtleScrollPanel()
-        {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
-            scrollFadeTimer = new System.Windows.Forms.Timer { Interval = 30 };
-            scrollFadeTimer.Tick += OnScrollFadeTick;
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            base.WndProc(ref m);
-            if (m.Msg == WM_NCCALCSIZE)
-            {
-                ShowScrollBar(Handle, SB_VERT, false);
-            }
-        }
-
-        protected override void OnScroll(ScrollEventArgs se)
-        {
-            base.OnScroll(se);
-            ShowSubtleScrollbar();
-        }
-
-        protected override void OnMouseWheel(MouseEventArgs e)
-        {
-            base.OnMouseWheel(e);
-            ShowSubtleScrollbar();
-        }
-
-        private void ShowSubtleScrollbar()
-        {
-            scrollOpacity = 1f;
-            scrollVisible = true;
-            scrollFadeTimer?.Stop();
-            scrollFadeTimer?.Start();
-            Invalidate();
-        }
-
-        private void OnScrollFadeTick(object? sender, EventArgs e)
-        {
-            scrollOpacity -= 0.06f;
-            if (scrollOpacity <= 0)
-            {
-                scrollOpacity = 0;
-                scrollVisible = false;
-                scrollFadeTimer?.Stop();
-            }
-            Invalidate();
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            if (!scrollVisible || !AutoScroll) return;
-
-            var si = new SCROLLINFO
-            {
-                cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-                fMask = 0x17 // SIF_ALL
-            };
-
-            if (!GetScrollInfo(Handle, SB_VERT, ref si)) return;
-            if (si.nMax <= (int)si.nPage) return;
-
-            int trackHeight = ClientSize.Height - 4;
-            if (trackHeight <= 0) return;
-
-            float viewRatio = (float)si.nPage / (si.nMax + 1);
-            int thumbHeight = Math.Max(20, (int)(trackHeight * viewRatio));
-            float scrollRatio = (float)si.nPos / Math.Max(1, si.nMax - (int)si.nPage + 1);
-            int thumbY = 2 + (int)(scrollRatio * (trackHeight - thumbHeight));
-
-            int x = ClientSize.Width - ScrollBarWidth - 3;
-            int alpha = (int)(scrollOpacity * ThumbColor.A);
-            using (var brush = new SolidBrush(Color.FromArgb(alpha, ThumbColor)))
-            using (var path = CreateRoundedRect(x, thumbY, ScrollBarWidth, thumbHeight, 3))
-            {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                e.Graphics.FillPath(brush, path);
-            }
-        }
-
-        private static GraphicsPath CreateRoundedRect(int x, int y, int w, int h, int r)
-        {
-            int d = r * 2;
-            var path = new GraphicsPath();
-            path.AddArc(x, y, d, d, 180, 90);
-            path.AddArc(x + w - d, y, d, d, 270, 90);
-            path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
-            path.AddArc(x, y + h - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                scrollFadeTimer?.Stop();
-                scrollFadeTimer?.Dispose();
-                scrollFadeTimer = null;
-            }
-            base.Dispose(disposing);
         }
     }
 }
