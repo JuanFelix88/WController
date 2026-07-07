@@ -732,9 +732,6 @@ public partial class MainForm : Form
         return count;
     }
 
-    private int CountWindowReferences(WindowItem activeWindow, WindowItem targetWindow)
-        => CountWindowReferences(activeWindow.Handle, targetWindow.Handle);
-
     private void OnListBox1KeyDown(object sender, KeyEventArgs e)
     {
         if (TryHandleKeybindForSingleMatchWindow(e)) return;
@@ -870,6 +867,24 @@ public partial class MainForm : Form
                 FocusInOneWindow(windowToFocusWithControl);
             }
 
+            return true;
+        }
+        if (e.KeyCode == Keys.Space && !e.Shift && !e.Control && !e.Alt && listBox1.SelectedItem is WindowItem itemSpace)
+        {
+            if (isOneWindowMode && !itemSpace.HighRelevance)
+            {
+                FocusInOneWindow(itemSpace);
+            }
+            else
+            {
+                FocusWindow(itemSpace);
+                if (listBox1.Items.Count > 0)
+                {
+                    IncrementCount((WindowItem)listBox1.Items[0], itemSpace);
+                }
+            }
+
+            this.Hide();
             return true;
         }
         if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
