@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -31,16 +32,43 @@ public partial class MainForm : Form
 
     const int MOD_ALT = 0x1;
     const int MOD_CONTROL = 0x2;
+    const int MOD_SHIFT = 0x4;
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
+    const int GROUPED_HOTKEY_ID = 9001;
+    const int DesktopIndicatorWidth = 4;
+    const int DesktopIndicatorMargin = 4;
+    const int DesktopGroupTitleHeight = 22;
 
     delegate bool EnumWindowsPrc(IntPtr hWnd, IntPtr lParam);
+
+    [ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IVirtualDesktopManager
+    {
+        [PreserveSig]
+        int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow, out int onCurrentDesktop);
+
+        [PreserveSig]
+        int GetWindowDesktopId(IntPtr topLevelWindow, out Guid desktopId);
+
+        [PreserveSig]
+        int MoveWindowToDesktop(IntPtr topLevelWindow, [MarshalAs(UnmanagedType.LPStruct)] Guid desktopId);
+    }
+
+    [ComImport, Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A")]
+    private class VirtualDesktopManager
+    {
+    }
 
     [DllImport("user32.dll")]
     static extern bool EnumWindows(EnumWindowsPrc lpEnumFunc, IntPtr lParam);
 
     [DllImport("user32.dll")]
     static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll", SetLastError = true)]
     static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -291,6 +319,105 @@ public partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Obtém o nome do desktop virtual que contém a janela de nível superior informada.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Lançada quando <paramref name="hWnd"/> é zero.</exception>
+    /// <exception cref="ArgumentException">Lançada quando <paramref name="hWnd"/> não representa uma janela válida.</exception>
+    /// <exception cref="InvalidOperationException">Lançada quando o desktop da janela não pode ser encontrado.</exception>
+    public string GetVirtualDesktopName(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero)
+            throw new ArgumentNullException(nameof(hWnd));
+
+        if (!IsWindow(hWnd))
+            throw new ArgumentException("O handle informado não representa uma janela válida.", nameof(hWnd));
+
+        Guid desktopId = GetWindowDesktopId(hWnd);
+
+        if (TryGetVirtualDesktopName(desktopId, out string desktopName))
+            return desktopName;
+
+        RefreshVirtualDesktopCache();
+
+        if (TryGetVirtualDesktopName(desktopId, out desktopName))
+            return desktopName;
+
+        throw new InvalidOperationException("A janela não está associada a um desktop virtual identificável.");
+    }
+
+    /// <summary>
+    /// Atualiza o cache de nomes dos desktops virtuais a partir do Registro do Explorer.
+    /// Chame este método após criar, excluir, reordenar ou renomear desktops.
+    /// </summary>
+    public void RefreshVirtualDesktopCache()
+    {
+        const string virtualDesktopsPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops";
+        const int guidSize = 16;
+
+        using RegistryKey? virtualDesktopsKey = Registry.CurrentUser.OpenSubKey(virtualDesktopsPath, writable: false);
+        if (virtualDesktopsKey is null)
+            throw new InvalidOperationException("A configuração de desktops virtuais do Explorer não foi encontrada.");
+
+        if (virtualDesktopsKey.GetValue("VirtualDesktopIDs") is not byte[] desktopIds || desktopIds.Length == 0 || desktopIds.Length % guidSize != 0)
+            throw new InvalidOperationException("A lista de desktops virtuais do Explorer é inválida.");
+
+        Dictionary<Guid, string> updatedDesktopNames = new Dictionary<Guid, string>(desktopIds.Length / guidSize);
+        for (int index = 0; index < desktopIds.Length / guidSize; index++)
+        {
+            byte[] idBytes = new byte[guidSize];
+            Array.Copy(desktopIds, index * guidSize, idBytes, 0, guidSize);
+
+            Guid desktopId = new Guid(idBytes);
+            using RegistryKey? desktopKey = virtualDesktopsKey.OpenSubKey($@"Desktops\{desktopId:B}", writable: false);
+            string? configuredName = desktopKey?.GetValue("Name") as string;
+            updatedDesktopNames.Add(desktopId, string.IsNullOrWhiteSpace(configuredName)
+                ? $"Desktop {index + 1}"
+                : configuredName!);
+        }
+
+        lock (virtualDesktopCacheSync)
+        {
+            virtualDesktopNames = updatedDesktopNames;
+            isVirtualDesktopCacheLoaded = true;
+        }
+    }
+
+    private static Guid GetWindowDesktopId(IntPtr hWnd)
+    {
+        IVirtualDesktopManager? manager = null;
+        try
+        {
+            manager = (IVirtualDesktopManager)new VirtualDesktopManager();
+            int hResult = manager.GetWindowDesktopId(hWnd, out Guid desktopId);
+            if (hResult != 0)
+                Marshal.ThrowExceptionForHR(hResult);
+
+            return desktopId;
+        }
+        finally
+        {
+            if (manager is not null && Marshal.IsComObject(manager))
+                Marshal.ReleaseComObject(manager);
+        }
+    }
+
+    private bool TryGetVirtualDesktopName(Guid desktopId, out string desktopName)
+    {
+        lock (virtualDesktopCacheSync)
+        {
+            if (!isVirtualDesktopCacheLoaded)
+            {
+                desktopName = string.Empty;
+                return false;
+            }
+
+            bool found = virtualDesktopNames.TryGetValue(desktopId, out string? cachedDesktopName);
+            desktopName = cachedDesktopName ?? string.Empty;
+            return found;
+        }
+    }
+
     public static Icon? GetWindowIcon(IntPtr hWnd)
     {
         if (!IsWindow(hWnd)) return null;
@@ -361,13 +488,27 @@ public partial class MainForm : Form
     private readonly Color SecondaryColor;
     private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
     private readonly Color ShortcutColor = Color.FromArgb(180, 255, 180);
+    private static readonly Color[] DesktopIndicatorColors =
+    {
+        Color.FromArgb(0, 122, 204),
+        Color.FromArgb(157, 95, 255),
+        Color.FromArgb(0, 220, 140),
+        Color.FromArgb(255, 130, 0),
+        Color.FromArgb(255, 75, 130),
+        Color.FromArgb(235, 200, 0)
+    };
     private Hashtable windowsToIgnore = new Hashtable(10);
     private Dictionary<IntPtr, (Image Icon, Image IconIconic)> iconsWindows = new Dictionary<IntPtr, (Image Icon, Image IconIconic)>(400);
     private Hashtable windowsRenames = new Hashtable();
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
     private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
     private Dictionary<IntPtr, string> windowsPaths = new Dictionary<IntPtr, string>();
+    private readonly Dictionary<string, Color> desktopIndicatorColors = new Dictionary<string, Color>(StringComparer.OrdinalIgnoreCase);
+    private readonly object virtualDesktopCacheSync = new object();
+    private Dictionary<Guid, string> virtualDesktopNames = new Dictionary<Guid, string>();
+    private bool isVirtualDesktopCacheLoaded;
     private bool isPreviewVisible = true;
+    private bool isDesktopGroupedView;
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
     private Image DefaultWindowIconImageIconic;
@@ -378,6 +519,7 @@ public partial class MainForm : Form
     private System.Timers.Timer temporaryTimer = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private float multiplierOpacityDecrement = 0.8f;
     private Font shortcutFont = new Font("Consolas", 10, FontStyle.Underline);
+    private Font desktopTitleFont = new Font("Consolas", 10, FontStyle.Regular);
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
     private bool isOneWindowMode = false;
@@ -413,6 +555,7 @@ public partial class MainForm : Form
         ComputeIgnoreWindows();
         LoadWindowList();
         RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Oemtilde);
+        RegisterHotKey(this.Handle, GROUPED_HOTKEY_ID, MOD_ALT | MOD_SHIFT, Keys.Oemtilde);
         InstallKeyboardHook();
         //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
         //this.KeyDown += this.MainForm_KeyDown;
@@ -964,7 +1107,7 @@ public partial class MainForm : Form
                 windowsShortcuts[itemForRename.Handle] = renameWindowModal.Shortcut;
             }
 
-            this.LoadWindowList();
+            this.LoadWindowList(isDesktopGroupedView);
             return true;
         }
         if (e.KeyCode == Keys.F3)
@@ -1016,7 +1159,11 @@ public partial class MainForm : Form
     {
         Action func = () =>
         {
-            var height = (listBox1.Items.Count * (listBox1.ItemHeight)) + (this.Padding.Vertical);
+            int itemsHeight = 0;
+            for (int index = 0; index < listBox1.Items.Count; index++)
+                itemsHeight += listBox1.GetItemHeight(index);
+
+            int height = itemsHeight + this.Padding.Vertical;
             this.Height = height < 345 ? 345 : height;
         };
 
@@ -1026,17 +1173,20 @@ public partial class MainForm : Form
 
     private void OnListBox1MeasureItem(object sender, MeasureItemEventArgs e)
     {
-        e.ItemHeight = listBox1.ItemHeight;
+        WindowItem item = (WindowItem)listBox1.Items[e.Index];
+        e.ItemHeight = listBox1.ItemHeight + (item.ShowsDesktopTitle ? DesktopGroupTitleHeight : 0);
     }
 
     private void OnListBox1DrawItem(object sender, DrawItemEventArgs e)
     {
         if (e.Index < 0) return;
-        e.DrawBackground();
+
         ListBox lb = (ListBox)sender;
         WindowItem item = (WindowItem)lb.Items[e.Index];
-        string text = item.ToStringWithoutShortcut();
         bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+        int titleHeight = item.ShowsDesktopTitle ? DesktopGroupTitleHeight : 0;
+        Rectangle titleBounds = new Rectangle(e.Bounds.X + 2, e.Bounds.Y, e.Bounds.Width - 4, titleHeight);
+        Rectangle contentBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + titleHeight, e.Bounds.Width, e.Bounds.Height - titleHeight);
 
         Color selectedColor = TertiaryColor;
         Color foreColor = selected ? Color.White : lb.ForeColor;
@@ -1050,56 +1200,71 @@ public partial class MainForm : Form
         }
 
         Color backColor = selected ? selectedColor : lb.BackColor;
+        using (Brush backgroundBrush = new SolidBrush(lb.BackColor))
+        using (Brush contentBrush = new SolidBrush(backColor))
+        {
+            e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
+            e.Graphics.FillRectangle(contentBrush, contentBounds);
+        }
 
-        e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
+        if (item.ShowsDesktopTitle)
+        {
+            TextRenderer.DrawText(e.Graphics, item.DesktopName, desktopTitleFont, titleBounds, ShortcutColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+        }
 
-        int iconSize = e.Bounds.Height - 4;
-        Image icon = ((WindowItem)lb.Items[e.Index]).OutIcon;
+        int iconSize = contentBounds.Height - 4;
+        Image icon = item.OutIcon;
+        Rectangle iconRect = new Rectangle(contentBounds.X + 2, contentBounds.Y + 2, iconSize, iconSize);
 
-        Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
-
-        if (icon != null)
-            e.Graphics.DrawImage(icon, iconRect);
+        e.Graphics.DrawImage(icon, iconRect);
 
         int textX = iconRect.Right + 4;
-
         if (!string.IsNullOrEmpty(item.Shortcut))
         {
-            Rectangle shortRect = new Rectangle(textX, e.Bounds.Y, 15, e.Bounds.Height);
-            TextRenderer.DrawText(e.Graphics, item.Shortcut, shortcutFont, shortRect, shortcutColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-
+            Rectangle shortRect = new Rectangle(textX, contentBounds.Y, 15, contentBounds.Height);
+            TextRenderer.DrawText(e.Graphics, item.Shortcut, shortcutFont, shortRect, shortcutColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             textX += 12;
         }
 
-        Rectangle textRect = new Rectangle(textX, e.Bounds.Y, e.Bounds.Width - textX, e.Bounds.Height);
-        TextRenderer.DrawText(e.Graphics, text, lb.Font, textRect, foreColor,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        Rectangle indicatorRect = new Rectangle(
+            contentBounds.Right - DesktopIndicatorMargin - DesktopIndicatorWidth,
+            contentBounds.Y + 3,
+            DesktopIndicatorWidth,
+            Math.Max(1, contentBounds.Height - 6));
+        int relevanceWidth = item.HighRelevance ? 12 : 0;
+        int textRight = indicatorRect.Left - DesktopIndicatorMargin - relevanceWidth;
+        Rectangle textRect = new Rectangle(textX, contentBounds.Y, Math.Max(0, textRight - textX), contentBounds.Height);
+        TextRenderer.DrawText(e.Graphics, item.ToDisplayString(), lb.Font, textRect, foreColor,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
 
         if (selected)
         {
             using (Pen borderPen = new Pen(IncrementColor(selectedColor, 2f), 1.5f))
             {
-                borderPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
-                Rectangle borderRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
+                borderPen.DashStyle = DashStyle.Dot;
+                Rectangle borderRect = new Rectangle(contentBounds.X, contentBounds.Y, contentBounds.Width - 1, contentBounds.Height - 1);
                 e.Graphics.DrawRectangle(borderPen, borderRect);
             }
         }
 
         if (item.HighRelevance)
         {
-            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            int diameter = 6;
-            int marginRight = 6;
-            int circleX = e.Bounds.Right - diameter - marginRight;
-            int circleY = e.Bounds.Top + (e.Bounds.Height - diameter) / 2;
-            Rectangle circleRect = new Rectangle(circleX, circleY, diameter, diameter);
-
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            const int diameter = 6;
+            int circleX = indicatorRect.Left - DesktopIndicatorMargin - diameter;
+            int circleY = contentBounds.Top + (contentBounds.Height - diameter) / 2;
             using (Brush whiteBrush = new SolidBrush(Color.White))
             {
-                e.Graphics.FillEllipse(whiteBrush, circleRect);
+                e.Graphics.FillEllipse(whiteBrush, new Rectangle(circleX, circleY, diameter, diameter));
             }
         }
 
+        using (Brush indicatorBrush = new SolidBrush(GetDesktopIndicatorColor(item.DesktopName)))
+        {
+            e.Graphics.FillRectangle(indicatorBrush, indicatorRect);
+        }
     }
 
     //private void ListBox1_DrawItem(object sender, DrawItemEventArgs e)
@@ -1263,123 +1428,156 @@ public partial class MainForm : Form
     }
 
 
-    private void LoadWindowList()
+    private void LoadWindowList(bool groupByDesktop = false)
     {
-        listBox1.BeginUpdate();
-        listBox1.Items.Clear();
+        isDesktopGroupedView = groupByDesktop;
+        IntPtr foregroundWindow = GetForegroundWindow();
+        var items = new List<WindowItem>();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
 
         EnumWindows((hWnd, lParam) =>
         {
-            if (hWnd == this.Handle || hWnd == IntPtr.Zero)
+            if (hWnd == this.Handle || hWnd == IntPtr.Zero || GetTypeWindow(hWnd) == 0 ||
+                windowsToIgnore.Contains(hWnd) || !IsWindow(hWnd) || IsOtherWindow(hWnd) || !IsWindowVisible(hWnd))
                 return true;
 
-            var typeWindow = GetTypeWindow(hWnd);
+            int countReferences = int.MaxValue;
+            if (firstHandle == null) firstHandle = hWnd;
+            else countReferences = CountWindowReferences(firstHandle.Value, hWnd);
 
-            if (typeWindow == 0) return true;
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0) return true;
 
-            if (windowsToIgnore.Contains(hWnd))
+            StringBuilder sb = new StringBuilder(length + 1);
+            GetWindowText(hWnd, sb, sb.Capacity);
+            var images = GetWindowIconImageEnhanced(hWnd);
+
+            string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
+            string? shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
+            if (shortcut is null)
             {
-                return true;
-            }
+                string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
+                    ? existingPath
+                    : WinHelper.GetPathFromHandle(hWnd);
 
-            if (!IsWindow(hWnd))
-            {
-                return true;
-            }
+                if (existingPath is null)
+                    windowsPaths[hWnd] = programPath;
 
-            if (IsOtherWindow(hWnd))
-            {
-                return true;
-            }
-
-            if (IsWindowVisible(hWnd))
-            {
-                int countReferences = int.MaxValue;
-                if (firstHandle == null) firstHandle = hWnd;
-                else countReferences = CountWindowReferences(firstHandle.Value, hWnd);
-
-                int length = GetWindowTextLength(hWnd);
-                if (length == 0) return true;
-                StringBuilder sb = new StringBuilder(length + 1);
-                GetWindowText(hWnd, sb, sb.Capacity);
-                var images = GetWindowIconImageEnhanced(hWnd);
-
-                string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
-                string? shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
-                if (shortcut is null)
+                string windowTitle = sb.ToString();
+                var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
+                if (matchedSetting is not null)
                 {
-                    string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
-                        ? existingPath
-                        : WinHelper.GetPathFromHandle(hWnd);
-
-                    if (existingPath is null)
+                    shortcut = matchedSetting.Shortcut;
+                    if (!string.IsNullOrEmpty(matchedSetting.IconPath))
                     {
-                        windowsPaths[hWnd] = programPath;
-                    }
-
-                    string windowTitle = sb.ToString();
-                    var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
-
-                    if (matchedSetting is not null)
-                    {
-                        shortcut = matchedSetting.Shortcut;
-
-                        if (!string.IsNullOrEmpty(matchedSetting.IconPath))
+                        var customIcon = Util.IconCache.GetIcon(matchedSetting.IconPath);
+                        if (customIcon is not null)
                         {
-                            var customIcon = Util.IconCache.GetIcon(matchedSetting.IconPath);
-                            if (customIcon is not null)
-                            {
-                                images.Icon = customIcon;
-                                images.IconIconic = customIcon;
-                            }
+                            images.Icon = customIcon;
+                            images.IconIconic = customIcon;
                         }
                     }
                 }
-
-                listBox1.Items.Add(new WindowItem
-                {
-                    Handle = hWnd,
-                    TypeWindow = typeWindow,
-                    Title = sb.ToString(),
-                    RenamedTitle = renamedTitleFetchResult,
-                    Icon = images.Icon,
-                    IconIconic = images.IconIconic,
-                    IsIconic = IsIconic(hWnd),
-                    Shortcut = shortcut ?? string.Empty,
-                    CountReferences = countReferences
-                });
             }
+
+            items.Add(new WindowItem
+            {
+                Handle = hWnd,
+                TypeWindow = GetTypeWindow(hWnd),
+                Title = sb.ToString(),
+                DesktopName = GetWindowDesktopName(hWnd),
+                RenamedTitle = renamedTitleFetchResult,
+                Icon = images.Icon,
+                IconIconic = images.IconIconic,
+                IsIconic = IsIconic(hWnd),
+                Shortcut = shortcut ?? string.Empty,
+                CountReferences = countReferences
+            });
 
             return true;
         }, IntPtr.Zero);
 
-        if (listBox1.Items.Count > 1)
-        {
-            int itemCount = listBox1.Items.Count;
-            var items = new WindowItem[itemCount];
-            for (int i = 0; i < itemCount; i++)
-                items[i] = (WindowItem)listBox1.Items[i];
+        UpdateWindowRelevance(items);
+        List<WindowItem> orderedItems = groupByDesktop
+            ? OrderWindowsByDesktop(items, foregroundWindow)
+            : items.OrderBy(item => item.TypeWindow).ToList();
 
-            var activeWindow = items[0];
-            listBox1.Items.Clear();
+        MarkDesktopGroupTitles(orderedItems, groupByDesktop);
+        AssignDesktopIndicatorColors(orderedItems);
 
-            int deltaChecks = 4;
-            double sum = 0;
-            for (int i = 1; i < itemCount; i++)
-                sum += items[i].CountReferences;
-            double average = sum / (itemCount - 1);
-
-            for (int i = 1; i < itemCount; i++)
-                items[i].HighRelevance = (items[i].CountReferences - deltaChecks) > average;
-
-            Array.Sort(items, (a, b) => a.TypeWindow.CompareTo(b.TypeWindow));
-            listBox1.Items.AddRange(items);
-        }
-
+        listBox1.BeginUpdate();
+        listBox1.Items.Clear();
+        listBox1.Items.AddRange(orderedItems.ToArray());
         listBox1.EndUpdate();
         ComputeHeightSize();
+    }
+
+    private string GetWindowDesktopName(IntPtr hWnd)
+    {
+        try
+        {
+            return GetVirtualDesktopName(hWnd);
+        }
+        catch
+        {
+            return "Desktop desconhecido";
+        }
+    }
+
+    private static void UpdateWindowRelevance(IReadOnlyList<WindowItem> items)
+    {
+        if (items.Count < 2) return;
+
+        const int deltaChecks = 4;
+        double average = items.Skip(1).Average(item => item.CountReferences);
+        for (int index = 1; index < items.Count; index++)
+            items[index].HighRelevance = (items[index].CountReferences - deltaChecks) > average;
+    }
+
+    private static List<WindowItem> OrderWindowsByDesktop(IReadOnlyList<WindowItem> items, IntPtr foregroundWindow)
+    {
+        if (items.Count == 0) return new List<WindowItem>();
+
+        WindowItem activeWindow = items.FirstOrDefault(item => item.Handle == foregroundWindow) ?? items[0];
+        var orderedItems = new List<WindowItem> { activeWindow };
+        orderedItems.AddRange(items
+            .Where(item => item != activeWindow)
+            .OrderBy(item => string.Equals(item.DesktopName, activeWindow.DesktopName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(item => item.DesktopName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.TypeWindow));
+        return orderedItems;
+    }
+
+    private static void MarkDesktopGroupTitles(IReadOnlyList<WindowItem> items, bool groupByDesktop)
+    {
+        string? previousDesktopName = null;
+        for (int index = 0; index < items.Count; index++)
+        {
+            WindowItem item = items[index];
+            item.ShowsDesktopTitle = groupByDesktop && (index == 0 ||
+                !string.Equals(item.DesktopName, previousDesktopName, StringComparison.OrdinalIgnoreCase));
+            previousDesktopName = item.DesktopName;
+        }
+    }
+
+    private void AssignDesktopIndicatorColors(IEnumerable<WindowItem> items)
+    {
+        desktopIndicatorColors.Clear();
+        int colorIndex = 0;
+        foreach (string desktopName in items.Select(item => item.DesktopName)
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            desktopIndicatorColors[desktopName] = DesktopIndicatorColors[colorIndex++ % DesktopIndicatorColors.Length];
+        }
+    }
+
+    private Color GetDesktopIndicatorColor(string desktopName)
+    {
+        return desktopIndicatorColors.TryGetValue(desktopName, out Color color)
+            ? color
+            : DesktopIndicatorColors[0];
     }
 
     private void buttonFocus_Click(object sender, EventArgs e)
@@ -1402,27 +1600,35 @@ public partial class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID)
+        if (m.Msg == WM_HOTKEY)
         {
-            if (this.Visible)
-            {
-                SelectNextItem();
-                this.Activate();
-            }
-            else
-            {
-                this.PerformLayout();
-                this.LoadWindowList();
-                if (listBox1.Items.Count > 0) this.listBox1.SelectedIndex = 0;
-                UpdateOneWindowModeIndicator();
-                this.Show();
-                this.Activate();
-                this.BringToFront();
-                Task.Delay(20).ContinueWith(t => Invoke(new Action(() => this.Invalidate())));
-            }
+            int hotkeyId = m.WParam.ToInt32();
+            if (hotkeyId == HOTKEY_ID || hotkeyId == GROUPED_HOTKEY_ID)
+                ToggleWindowList(hotkeyId == GROUPED_HOTKEY_ID);
         }
 
         base.WndProc(ref m);
+    }
+
+    private void ToggleWindowList(bool groupByDesktop)
+    {
+        if (Visible && isDesktopGroupedView == groupByDesktop)
+        {
+            SelectNextItem();
+            Activate();
+            return;
+        }
+
+        PerformLayout();
+        LoadWindowList(groupByDesktop);
+        if (listBox1.Items.Count > 0)
+            listBox1.SelectedIndex = 0;
+
+        UpdateOneWindowModeIndicator();
+        Show();
+        Activate();
+        BringToFront();
+        Task.Delay(20).ContinueWith(t => Invoke(new Action(Invalidate)));
     }
 
     private void InstallKeyboardHook()
@@ -1481,6 +1687,7 @@ public partial class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         UnregisterHotKey(this.Handle, HOTKEY_ID);
+        UnregisterHotKey(this.Handle, GROUPED_HOTKEY_ID);
         UninstallKeyboardHook();
         base.OnFormClosing(e);
     }
@@ -1489,9 +1696,11 @@ public partial class MainForm : Form
     {
         public required IntPtr Handle { get; set; }
         public required string Title { get; set; }
+        public required string DesktopName { get; set; }
         public required int TypeWindow { get; set; }
         public required int CountReferences { get; set; }
         public bool HighRelevance { get; set; } = false;
+        public bool ShowsDesktopTitle { get; set; }
         public required string? RenamedTitle { get; set; }
         public required string Shortcut { get; set; } = string.Empty;
         public required bool IsIconic { get; set; }
@@ -1512,6 +1721,11 @@ public partial class MainForm : Form
         public string ToStringWithoutShortcut()
         {
             return !string.IsNullOrEmpty(RenamedTitle) ? RenamedTitle! : Title;
+        }
+
+        public string ToDisplayString()
+        {
+            return $"{ToStringWithoutShortcut()} · {DesktopName}";
         }
 
         public override string ToString()
