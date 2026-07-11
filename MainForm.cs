@@ -1458,12 +1458,15 @@ public partial class MainForm : Form
                 windowsToIgnore.Contains(hWnd) || !IsWindow(hWnd) || IsOtherWindow(hWnd) || !IsWindowVisible(hWnd))
                 return true;
 
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0) return true;
+
+            if (!TryGetWindowDesktopName(hWnd, out string desktopName))
+                return true;
+
             int countReferences = int.MaxValue;
             if (firstHandle == null) firstHandle = hWnd;
             else countReferences = CountWindowReferences(firstHandle.Value, hWnd);
-
-            int length = GetWindowTextLength(hWnd);
-            if (length == 0) return true;
 
             StringBuilder sb = new StringBuilder(length + 1);
             GetWindowText(hWnd, sb, sb.Capacity);
@@ -1502,7 +1505,7 @@ public partial class MainForm : Form
                 Handle = hWnd,
                 TypeWindow = GetTypeWindow(hWnd),
                 Title = sb.ToString(),
-                DesktopName = GetWindowDesktopName(hWnd),
+                DesktopName = desktopName,
                 RenamedTitle = renamedTitleFetchResult,
                 Icon = images.Icon,
                 IconIconic = images.IconIconic,
@@ -1529,15 +1532,17 @@ public partial class MainForm : Form
         ComputeHeightSize();
     }
 
-    private string GetWindowDesktopName(IntPtr hWnd)
+    private bool TryGetWindowDesktopName(IntPtr hWnd, out string desktopName)
     {
         try
         {
-            return GetVirtualDesktopName(hWnd);
+            desktopName = GetVirtualDesktopName(hWnd);
+            return true;
         }
         catch
         {
-            return "Desktop desconhecido";
+            desktopName = string.Empty;
+            return false;
         }
     }
 
