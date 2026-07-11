@@ -509,6 +509,7 @@ public partial class MainForm : Form
     private bool isVirtualDesktopCacheLoaded;
     private bool isPreviewVisible = true;
     private bool isDesktopGroupedView;
+    private bool isDesktopGroupingHotkeyInverted;
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
     private Image DefaultWindowIconImageIconic;
@@ -1120,6 +1121,15 @@ public partial class MainForm : Form
 
     private bool TryHandleViewModes(KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.F8)
+        {
+            isDesktopGroupingHotkeyInverted = !isDesktopGroupingHotkeyInverted;
+            LoadWindowList(isDesktopGroupingHotkeyInverted);
+            if (listBox1.Items.Count > 0)
+                listBox1.SelectedIndex = 0;
+            UpdateOneWindowModeIndicator();
+            return true;
+        }
         if (e.KeyCode == Keys.F10)
         {
             TogglePreviewPanel();
@@ -1143,9 +1153,15 @@ public partial class MainForm : Form
 
     private void UpdateOneWindowModeIndicator()
     {
-        if (isOneWindowMode)
+        if (isDesktopGroupingHotkeyInverted || isOneWindowMode)
         {
-            lbSelectedWindow.Text = "[F11] Single Window Mode";
+            var activeModes = new List<string>();
+            if (isDesktopGroupingHotkeyInverted)
+                activeModes.Add("[F8] Desktop Grouping Mode");
+            if (isOneWindowMode)
+                activeModes.Add("[F11] Single Window Mode");
+
+            lbSelectedWindow.Text = string.Join(" | ", activeModes);
             lbSelectedWindow.ForeColor = Color.FromArgb(255, 180, 100);
         }
         else
@@ -1604,7 +1620,10 @@ public partial class MainForm : Form
         {
             int hotkeyId = m.WParam.ToInt32();
             if (hotkeyId == HOTKEY_ID || hotkeyId == GROUPED_HOTKEY_ID)
-                ToggleWindowList(hotkeyId == GROUPED_HOTKEY_ID);
+            {
+                bool groupedHotkeyPressed = hotkeyId == GROUPED_HOTKEY_ID;
+                ToggleWindowList(groupedHotkeyPressed != isDesktopGroupingHotkeyInverted);
+            }
         }
 
         base.WndProc(ref m);
