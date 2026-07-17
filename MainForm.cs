@@ -35,11 +35,31 @@ public partial class MainForm : Form
     const int MOD_SHIFT = 0x4;
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
-    const int GROUPED_HOTKEY_ID = 9001;
+    const int CURRENT_DESKTOP_HOTKEY_ID = 9001;
     const int DesktopIndicatorWidth = 4;
     const int DesktopIndicatorMargin = 4;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
+    const int MouseSelectionPollIntervalMilliseconds = 16;
+    const int MouseSelectionStepPixels = 25;
+    const int MouseSelectionHysteresisPixels = 10;
+    const uint SPI_SETCURSORS = 0x0057;
+    private static readonly uint[] SystemCursorIds =
+    {
+        32512, // OCR_NORMAL
+        32513, // OCR_IBEAM
+        32514, // OCR_WAIT
+        32515, // OCR_CROSS
+        32516, // OCR_UP
+        32642, // OCR_SIZENWSE
+        32643, // OCR_SIZENESW
+        32644, // OCR_SIZEWE
+        32645, // OCR_SIZENS
+        32646, // OCR_SIZEALL
+        32648, // OCR_NO
+        32649, // OCR_HAND
+        32650  // OCR_APPSTARTING
+    };
 
     delegate bool EnumWindowsPrc(IntPtr hWnd, IntPtr lParam);
 
@@ -82,6 +102,18 @@ public partial class MainForm : Form
 
     [DllImport("user32.dll")]
     static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr CopyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool DestroyCursor(IntPtr hCursor);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool SetSystemCursor(IntPtr hCursor, uint id);
+
+    [DllImport("user32.dll")]
+    static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
 
     [DllImport("user32.dll")]
     static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
@@ -328,13 +360,18 @@ public partial class MainForm : Form
     /// <exception cref="InvalidOperationException">Lançada quando o desktop da janela não pode ser encontrado.</exception>
     public string GetVirtualDesktopName(IntPtr hWnd)
     {
+        return GetVirtualDesktopName(hWnd, out _);
+    }
+
+    private string GetVirtualDesktopName(IntPtr hWnd, out Guid desktopId)
+    {
         if (hWnd == IntPtr.Zero)
             throw new ArgumentNullException(nameof(hWnd));
 
         if (!IsWindow(hWnd))
             throw new ArgumentException("O handle informado não representa uma janela válida.", nameof(hWnd));
 
-        Guid desktopId = GetWindowDesktopId(hWnd);
+        desktopId = GetWindowDesktopId(hWnd);
 
         if (TryGetVirtualDesktopName(desktopId, out string desktopName))
             return desktopName;
@@ -510,6 +547,7 @@ public partial class MainForm : Form
     private bool isVirtualDesktopCacheLoaded;
     private bool isPreviewVisible = true;
     private bool isDesktopGroupedView;
+    private bool isCurrentDesktopOnlyView;
     private bool isDesktopGroupingHotkeyInverted;
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
@@ -529,9 +567,16 @@ public partial class MainForm : Form
     private readonly Pen selectedIconicItemBorderPen;
     private readonly SolidBrush[] desktopIndicatorBrushes;
     private readonly System.Windows.Forms.Timer previewUpdateTimer;
+    private readonly System.Windows.Forms.Timer mouseSelectionTimer;
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
     private bool isOneWindowMode = false;
+    private bool isMouseSelectionMode = false;
+    private bool isApplyingMouseSelection = false;
+    private bool areSystemCursorsOverridden = false;
+    private int mouseSelectionOriginY;
+    private int mouseSelectionOriginIndex;
+    private int mouseSelectionStep;
 
     public MainForm()
     {
@@ -566,6 +611,8 @@ public partial class MainForm : Form
         desktopIndicatorBrushes = DesktopIndicatorColors.Select(color => new SolidBrush(color)).ToArray();
         previewUpdateTimer = new System.Windows.Forms.Timer { Interval = PreviewUpdateDelayMilliseconds };
         previewUpdateTimer.Tick += this.OnPreviewUpdateTimerTick;
+        mouseSelectionTimer = new System.Windows.Forms.Timer { Interval = MouseSelectionPollIntervalMilliseconds };
+        mouseSelectionTimer.Tick += this.OnMouseSelectionTimerTick;
 
         listBox1.DrawMode = DrawMode.OwnerDrawFixed;
         listBox1.MeasureItem += this.OnListBox1MeasureItem;
@@ -575,7 +622,7 @@ public partial class MainForm : Form
         ComputeIgnoreWindows();
         LoadWindowList();
         RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Oemtilde);
-        RegisterHotKey(this.Handle, GROUPED_HOTKEY_ID, MOD_ALT | MOD_SHIFT, Keys.Oemtilde);
+        RegisterHotKey(this.Handle, CURRENT_DESKTOP_HOTKEY_ID, MOD_ALT | MOD_SHIFT, Keys.Oemtilde);
         InstallKeyboardHook();
         //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
         //this.KeyDown += this.MainForm_KeyDown;
@@ -585,6 +632,7 @@ public partial class MainForm : Form
         this.Load += this.MainForm_Load;
         this.Paint += this.MainForm_Paint;
         this.Deactivate += this.OnDeactivate;
+        this.VisibleChanged += this.OnMainFormVisibleChanged;
 
         listBox1.DoubleClick += (s, e) =>
         {
@@ -639,6 +687,13 @@ public partial class MainForm : Form
     {
         previewUpdateTimer.Stop();
 
+        if (isMouseSelectionMode && !isApplyingMouseSelection && listBox1.SelectedIndex >= 0)
+            ResetMouseSelectionAnchor();
+
+        bool hasActiveMode = isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode;
+        if (hasActiveMode)
+            UpdateOneWindowModeIndicator();
+
         if (!isPreviewVisible)
         {
             CloseCurrentPreview();
@@ -654,7 +709,8 @@ public partial class MainForm : Form
         }
 
         lbPreview.Text = string.Empty;
-        lbSelectedWindow.Text = selectedWindow.Title;
+        if (!hasActiveMode)
+            lbSelectedWindow.Text = selectedWindow.Title;
 
         // Let the selection repaint before doing synchronous DWM thumbnail work.
         previewUpdateTimer.Start();
@@ -960,6 +1016,7 @@ public partial class MainForm : Form
         {
             e.Handled = true;
             MessageBox.Show("Program closed.", this.Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            RestoreSystemCursors();
             Process.GetCurrentProcess().Kill();
             return true;
         }
@@ -1147,7 +1204,7 @@ public partial class MainForm : Form
                 windowsShortcuts[itemForRename.Handle] = renameWindowModal.Shortcut;
             }
 
-            this.LoadWindowList(isDesktopGroupedView);
+            this.LoadWindowList(isDesktopGroupedView, isCurrentDesktopOnlyView);
             return true;
         }
         if (e.KeyCode == Keys.F3)
@@ -1163,10 +1220,15 @@ public partial class MainForm : Form
         if (e.KeyCode == Keys.F8)
         {
             isDesktopGroupingHotkeyInverted = !isDesktopGroupingHotkeyInverted;
-            LoadWindowList(isDesktopGroupingHotkeyInverted);
+            LoadWindowList(isDesktopGroupingHotkeyInverted, isCurrentDesktopOnlyView);
             if (listBox1.Items.Count > 0)
                 listBox1.SelectedIndex = 0;
             UpdateOneWindowModeIndicator();
+            return true;
+        }
+        if (e.KeyCode == Keys.F9)
+        {
+            ToggleMouseSelectionMode();
             return true;
         }
         if (e.KeyCode == Keys.F10)
@@ -1183,6 +1245,127 @@ public partial class MainForm : Form
         return false;
     }
 
+    private void ToggleMouseSelectionMode()
+    {
+        if (isMouseSelectionMode)
+        {
+            DisableMouseSelectionMode();
+            return;
+        }
+
+        if (listBox1.SelectedIndex < 0) return;
+
+        isMouseSelectionMode = true;
+        ResetMouseSelectionAnchor();
+        ApplyMouseSelectionCursor();
+        mouseSelectionTimer.Start();
+        UpdateOneWindowModeIndicator();
+    }
+
+    private void DisableMouseSelectionMode()
+    {
+        mouseSelectionTimer.Stop();
+        if (!isMouseSelectionMode) return;
+
+        isMouseSelectionMode = false;
+        mouseSelectionStep = 0;
+        RestoreSystemCursors();
+        UpdateOneWindowModeIndicator();
+    }
+
+    private void ResetMouseSelectionAnchor()
+    {
+        if (listBox1.SelectedIndex < 0) return;
+
+        mouseSelectionOriginY = Cursor.Position.Y;
+        mouseSelectionOriginIndex = listBox1.SelectedIndex;
+        mouseSelectionStep = 0;
+    }
+
+    private void ApplyMouseSelectionCursor()
+    {
+        if (areSystemCursorsOverridden) return;
+
+        bool cursorChanged = false;
+        foreach (uint cursorId in SystemCursorIds)
+        {
+            IntPtr cursorCopy = CopyIcon(Cursors.SizeNS.Handle);
+            if (cursorCopy == IntPtr.Zero) continue;
+
+            if (SetSystemCursor(cursorCopy, cursorId))
+                cursorChanged = true;
+            else
+                DestroyCursor(cursorCopy);
+        }
+
+        areSystemCursorsOverridden = cursorChanged;
+        Cursor.Current = Cursors.SizeNS;
+    }
+
+    private void RestoreSystemCursors()
+    {
+        if (areSystemCursorsOverridden)
+            SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0);
+
+        areSystemCursorsOverridden = false;
+        Cursor.Current = Cursors.Default;
+    }
+
+    private void OnMouseSelectionTimerTick(object sender, EventArgs e)
+    {
+        if (!Visible)
+        {
+            mouseSelectionTimer.Stop();
+            RestoreSystemCursors();
+            return;
+        }
+        if (!isMouseSelectionMode || listBox1.Items.Count == 0) return;
+
+        ApplyMouseSelectionCursor();
+        int deltaY = Cursor.Position.Y - mouseSelectionOriginY;
+        int nextStep = deltaY / MouseSelectionStepPixels;
+
+        if (nextStep > mouseSelectionStep && mouseSelectionStep < 0 &&
+            deltaY < (mouseSelectionStep * MouseSelectionStepPixels) + MouseSelectionHysteresisPixels)
+            nextStep = mouseSelectionStep;
+        else if (nextStep < mouseSelectionStep && mouseSelectionStep > 0 &&
+                 deltaY > (mouseSelectionStep * MouseSelectionStepPixels) - MouseSelectionHysteresisPixels)
+            nextStep = mouseSelectionStep;
+
+        if (nextStep == mouseSelectionStep) return;
+
+        mouseSelectionStep = nextStep;
+        int targetIndex = Math.Max(0, Math.Min(listBox1.Items.Count - 1, mouseSelectionOriginIndex + mouseSelectionStep));
+        if (targetIndex == listBox1.SelectedIndex) return;
+
+        isApplyingMouseSelection = true;
+        try
+        {
+            listBox1.SelectedIndex = targetIndex;
+        }
+        finally
+        {
+            isApplyingMouseSelection = false;
+        }
+    }
+
+    private void OnMainFormVisibleChanged(object sender, EventArgs e)
+    {
+        if (!Visible)
+        {
+            mouseSelectionTimer.Stop();
+            RestoreSystemCursors();
+            return;
+        }
+
+        if (!isMouseSelectionMode || listBox1.SelectedIndex < 0) return;
+
+        ResetMouseSelectionAnchor();
+        ApplyMouseSelectionCursor();
+        mouseSelectionTimer.Start();
+        UpdateOneWindowModeIndicator();
+    }
+
     private void ComputeLastSelectedIndex(int i)
     {
         if (listBox1.Items.Count == 0) return;
@@ -1192,11 +1375,13 @@ public partial class MainForm : Form
 
     private void UpdateOneWindowModeIndicator()
     {
-        if (isDesktopGroupingHotkeyInverted || isOneWindowMode)
+        if (isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode)
         {
             var activeModes = new List<string>();
             if (isDesktopGroupingHotkeyInverted)
                 activeModes.Add("[F8] Desktop Grouping Mode");
+            if (isMouseSelectionMode)
+                activeModes.Add("[F9] Mouse Selection Mode");
             if (isOneWindowMode)
                 activeModes.Add("[F11] Single Window Mode");
 
@@ -1268,7 +1453,8 @@ public partial class MainForm : Form
 
         if (item.ShowsDesktopTitle)
         {
-            TextRenderer.DrawText(e.Graphics, item.DesktopName, desktopTitleFont, titleBounds, ShortcutColor,
+            TextRenderer.DrawText(e.Graphics, item.DesktopName, desktopTitleFont, titleBounds,
+                GetDesktopIndicatorBrush(item.DesktopName).Color,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
 
@@ -1293,7 +1479,8 @@ public partial class MainForm : Form
         int relevanceWidth = item.HighRelevance ? 12 : 0;
         int textRight = indicatorRect.Left - DesktopIndicatorMargin - relevanceWidth;
         Rectangle textRect = new Rectangle(textX, contentBounds.Y, Math.Max(0, textRight - textX), contentBounds.Height);
-        TextRenderer.DrawText(e.Graphics, item.ToDisplayString(), lb.Font, textRect, foreColor,
+        string displayText = isDesktopGroupedView ? item.ToStringWithoutShortcut() : item.ToDisplayString();
+        TextRenderer.DrawText(e.Graphics, displayText, lb.Font, textRect, foreColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
 
         if (selected)
@@ -1478,14 +1665,19 @@ public partial class MainForm : Form
     }
 
 
-    private void LoadWindowList(bool groupByDesktop = false)
+    private void LoadWindowList(bool groupByDesktop = false, bool currentDesktopOnly = false)
     {
         isDesktopGroupedView = groupByDesktop;
+        isCurrentDesktopOnlyView = currentDesktopOnly;
         DrawMode requestedDrawMode = groupByDesktop ? DrawMode.OwnerDrawVariable : DrawMode.OwnerDrawFixed;
         if (listBox1.DrawMode != requestedDrawMode)
             listBox1.DrawMode = requestedDrawMode;
 
         IntPtr foregroundWindow = GetForegroundWindow();
+        Guid? desktopFilter = null;
+        if (currentDesktopOnly && TryGetWindowDesktop(foregroundWindow, out Guid foregroundDesktopId, out _))
+            desktopFilter = foregroundDesktopId;
+
         var items = new List<WindowItem>();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
@@ -1499,8 +1691,16 @@ public partial class MainForm : Form
             int length = GetWindowTextLength(hWnd);
             if (length == 0) return true;
 
-            if (!TryGetWindowDesktopName(hWnd, out string desktopName))
+            if (!TryGetWindowDesktop(hWnd, out Guid desktopId, out string desktopName))
                 return true;
+
+            if (currentDesktopOnly)
+            {
+                if (desktopFilter is null)
+                    desktopFilter = desktopId;
+                else if (desktopId != desktopFilter.Value)
+                    return true;
+            }
 
             int countReferences = int.MaxValue;
             if (firstHandle == null) firstHandle = hWnd;
@@ -1570,11 +1770,12 @@ public partial class MainForm : Form
         ComputeHeightSize();
     }
 
-    private bool TryGetWindowDesktopName(IntPtr hWnd, out string desktopName)
+    private bool TryGetWindowDesktop(IntPtr hWnd, out Guid desktopId, out string desktopName)
     {
+        desktopId = Guid.Empty;
         try
         {
-            desktopName = GetVirtualDesktopName(hWnd);
+            desktopName = GetVirtualDesktopName(hWnd, out desktopId);
             return true;
         }
         catch
@@ -1632,7 +1833,7 @@ public partial class MainForm : Form
         }
     }
 
-    private Brush GetDesktopIndicatorBrush(string desktopName)
+    private SolidBrush GetDesktopIndicatorBrush(string desktopName)
     {
         int colorIndex = desktopIndicatorColorIndexes.TryGetValue(desktopName, out int mappedColorIndex)
             ? mappedColorIndex
@@ -1663,19 +1864,29 @@ public partial class MainForm : Form
         if (m.Msg == WM_HOTKEY)
         {
             int hotkeyId = m.WParam.ToInt32();
-            if (hotkeyId == HOTKEY_ID || hotkeyId == GROUPED_HOTKEY_ID)
+            if (hotkeyId == HOTKEY_ID || hotkeyId == CURRENT_DESKTOP_HOTKEY_ID)
             {
-                bool groupedHotkeyPressed = hotkeyId == GROUPED_HOTKEY_ID;
-                ToggleWindowList(groupedHotkeyPressed != isDesktopGroupingHotkeyInverted);
+                bool currentDesktopHotkeyPressed = hotkeyId == CURRENT_DESKTOP_HOTKEY_ID;
+                ToggleWindowList(isDesktopGroupingHotkeyInverted, currentDesktopHotkeyPressed);
+                if (isMouseSelectionMode)
+                    PositionCursorForMouseSelection();
             }
         }
 
         base.WndProc(ref m);
     }
 
-    private void ToggleWindowList(bool groupByDesktop)
+    private void PositionCursorForMouseSelection()
     {
-        if (Visible && isDesktopGroupedView == groupByDesktop)
+        Rectangle screenBounds = Screen.FromControl(this).Bounds;
+        Cursor.Position = new Point(screenBounds.Left + (screenBounds.Width / 2), Top);
+        ApplyMouseSelectionCursor();
+        ResetMouseSelectionAnchor();
+    }
+
+    private void ToggleWindowList(bool groupByDesktop, bool currentDesktopOnly)
+    {
+        if (Visible && isDesktopGroupedView == groupByDesktop && isCurrentDesktopOnlyView == currentDesktopOnly)
         {
             SelectNextItem();
             Activate();
@@ -1683,7 +1894,7 @@ public partial class MainForm : Form
         }
 
         PerformLayout();
-        LoadWindowList(groupByDesktop);
+        LoadWindowList(groupByDesktop, currentDesktopOnly);
         if (listBox1.Items.Count > 0)
             listBox1.SelectedIndex = 0;
 
@@ -1750,12 +1961,15 @@ public partial class MainForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         previewUpdateTimer.Stop();
+        mouseSelectionTimer.Stop();
+        RestoreSystemCursors();
         CloseCurrentPreview();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
-        UnregisterHotKey(this.Handle, GROUPED_HOTKEY_ID);
+        UnregisterHotKey(this.Handle, CURRENT_DESKTOP_HOTKEY_ID);
         UninstallKeyboardHook();
 
         previewUpdateTimer.Dispose();
+        mouseSelectionTimer.Dispose();
         listBackgroundBrush.Dispose();
         selectedItemBrush.Dispose();
         selectedIconicItemBrush.Dispose();
