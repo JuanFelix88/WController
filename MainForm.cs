@@ -36,8 +36,6 @@ public partial class MainForm : Form
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
     const int CURRENT_DESKTOP_HOTKEY_ID = 9001;
-    const int DesktopIndicatorWidth = 4;
-    const int DesktopIndicatorMargin = 4;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
     const int MouseSelectionPollIntervalMilliseconds = 16;
@@ -526,22 +524,12 @@ public partial class MainForm : Form
     private readonly Color SecondaryColor;
     private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
     private readonly Color ShortcutColor = Color.FromArgb(180, 255, 180);
-    private static readonly Color[] DesktopIndicatorColors =
-    {
-        Color.FromArgb(0, 122, 204),
-        Color.FromArgb(157, 95, 255),
-        Color.FromArgb(0, 220, 140),
-        Color.FromArgb(255, 130, 0),
-        Color.FromArgb(255, 75, 130),
-        Color.FromArgb(235, 200, 0)
-    };
     private Hashtable windowsToIgnore = new Hashtable(10);
     private Dictionary<IntPtr, (Image Icon, Image IconIconic)> iconsWindows = new Dictionary<IntPtr, (Image Icon, Image IconIconic)>(400);
     private Hashtable windowsRenames = new Hashtable();
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
     private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
     private Dictionary<IntPtr, string> windowsPaths = new Dictionary<IntPtr, string>();
-    private readonly Dictionary<string, int> desktopIndicatorColorIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     private readonly object virtualDesktopCacheSync = new object();
     private Dictionary<Guid, string> virtualDesktopNames = new Dictionary<Guid, string>();
     private bool isVirtualDesktopCacheLoaded;
@@ -565,7 +553,6 @@ public partial class MainForm : Form
     private readonly SolidBrush selectedIconicItemBrush;
     private readonly Pen selectedItemBorderPen;
     private readonly Pen selectedIconicItemBorderPen;
-    private readonly SolidBrush[] desktopIndicatorBrushes;
     private readonly System.Windows.Forms.Timer previewUpdateTimer;
     private readonly System.Windows.Forms.Timer mouseSelectionTimer;
     private Rectangle previewRectangle;
@@ -608,7 +595,6 @@ public partial class MainForm : Form
         selectedIconicItemBrush = new SolidBrush(selectedIconicColor);
         selectedItemBorderPen = CreateSelectedItemBorderPen(TertiaryColor);
         selectedIconicItemBorderPen = CreateSelectedItemBorderPen(selectedIconicColor);
-        desktopIndicatorBrushes = DesktopIndicatorColors.Select(color => new SolidBrush(color)).ToArray();
         previewUpdateTimer = new System.Windows.Forms.Timer { Interval = PreviewUpdateDelayMilliseconds };
         previewUpdateTimer.Tick += this.OnPreviewUpdateTimerTick;
         mouseSelectionTimer = new System.Windows.Forms.Timer { Interval = MouseSelectionPollIntervalMilliseconds };
@@ -1454,7 +1440,7 @@ public partial class MainForm : Form
         if (item.ShowsDesktopTitle)
         {
             TextRenderer.DrawText(e.Graphics, item.DesktopName, desktopTitleFont, titleBounds,
-                GetDesktopIndicatorBrush(item.DesktopName).Color,
+                lb.ForeColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
 
@@ -1471,13 +1457,8 @@ public partial class MainForm : Form
             textX += 12;
         }
 
-        Rectangle indicatorRect = new Rectangle(
-            contentBounds.Right - DesktopIndicatorMargin - DesktopIndicatorWidth,
-            contentBounds.Y + 3,
-            DesktopIndicatorWidth,
-            Math.Max(1, contentBounds.Height - 6));
         int relevanceWidth = item.HighRelevance ? 12 : 0;
-        int textRight = indicatorRect.Left - DesktopIndicatorMargin - relevanceWidth;
+        int textRight = contentBounds.Right - 4 - relevanceWidth;
         Rectangle textRect = new Rectangle(textX, contentBounds.Y, Math.Max(0, textRight - textX), contentBounds.Height);
         string displayText = isDesktopGroupedView ? item.ToStringWithoutShortcut() : item.ToDisplayString();
         TextRenderer.DrawText(e.Graphics, displayText, lb.Font, textRect, foreColor,
@@ -1495,13 +1476,11 @@ public partial class MainForm : Form
             SmoothingMode previousSmoothingMode = e.Graphics.SmoothingMode;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             const int diameter = 6;
-            int circleX = indicatorRect.Left - DesktopIndicatorMargin - diameter;
+            int circleX = contentBounds.Right - 4 - diameter;
             int circleY = contentBounds.Top + (contentBounds.Height - diameter) / 2;
             e.Graphics.FillEllipse(Brushes.White, new Rectangle(circleX, circleY, diameter, diameter));
             e.Graphics.SmoothingMode = previousSmoothingMode;
         }
-
-        e.Graphics.FillRectangle(GetDesktopIndicatorBrush(item.DesktopName), indicatorRect);
     }
 
     //private void ListBox1_DrawItem(object sender, DrawItemEventArgs e)
@@ -1761,7 +1740,6 @@ public partial class MainForm : Form
             : items.OrderBy(item => item.TypeWindow).ToList();
 
         MarkDesktopGroupTitles(orderedItems, groupByDesktop);
-        AssignDesktopIndicatorColors(orderedItems);
 
         listBox1.BeginUpdate();
         listBox1.Items.Clear();
@@ -1819,26 +1797,6 @@ public partial class MainForm : Form
                 !string.Equals(item.DesktopName, previousDesktopName, StringComparison.OrdinalIgnoreCase));
             previousDesktopName = item.DesktopName;
         }
-    }
-
-    private void AssignDesktopIndicatorColors(IEnumerable<WindowItem> items)
-    {
-        desktopIndicatorColorIndexes.Clear();
-        int colorIndex = 0;
-        foreach (string desktopName in items.Select(item => item.DesktopName)
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
-        {
-            desktopIndicatorColorIndexes[desktopName] = colorIndex++ % DesktopIndicatorColors.Length;
-        }
-    }
-
-    private SolidBrush GetDesktopIndicatorBrush(string desktopName)
-    {
-        int colorIndex = desktopIndicatorColorIndexes.TryGetValue(desktopName, out int mappedColorIndex)
-            ? mappedColorIndex
-            : 0;
-        return desktopIndicatorBrushes[colorIndex];
     }
 
     private void buttonFocus_Click(object sender, EventArgs e)
@@ -1975,8 +1933,6 @@ public partial class MainForm : Form
         selectedIconicItemBrush.Dispose();
         selectedItemBorderPen.Dispose();
         selectedIconicItemBorderPen.Dispose();
-        foreach (SolidBrush indicatorBrush in desktopIndicatorBrushes)
-            indicatorBrush.Dispose();
         shortcutFont.Dispose();
         desktopTitleFont.Dispose();
 
