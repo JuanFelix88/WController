@@ -978,11 +978,31 @@ public partial class MainForm : Form
         bool MatchKey(WindowItem w) =>
             char.ToLowerInvariant((!string.IsNullOrEmpty(w.Shortcut) ? w.Shortcut[0] : w.ToStringWithoutShortcut()[0])) == input;
 
-        var matches = listBox1.Items.Cast<WindowItem>().Where(MatchKey).ToList();
+        var items = listBox1.Items.Cast<WindowItem>().ToList();
+        int selectedIndex = listBox1.SelectedIndex;
+        WindowItem? item = null;
 
-        if (matches.Count != 1) return false;
+        if (selectedIndex >= 0)
+        {
+            for (int offset = 1; offset < items.Count; offset++)
+            {
+                WindowItem candidate = items[(selectedIndex + offset) % items.Count];
+                if (MatchKey(candidate))
+                {
+                    item = candidate;
+                    break;
+                }
+            }
 
-        var item = matches[0];
+            if (item is null && MatchKey(items[selectedIndex]))
+                item = items[selectedIndex];
+        }
+        else
+        {
+            item = items.FirstOrDefault(MatchKey);
+        }
+
+        if (item is null) return false;
         if (isOneWindowMode && !item.HighRelevance)
             FocusInOneWindow(item);
         else
