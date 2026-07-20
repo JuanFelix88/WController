@@ -530,6 +530,8 @@ public partial class MainForm : Form
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
     private Dictionary<(IntPtr, IntPtr), int> windowsReferences = new Dictionary<(IntPtr, IntPtr), int>();
     private Dictionary<IntPtr, string> windowsPaths = new Dictionary<IntPtr, string>();
+    private char? quickShortcutCycleKey;
+    private readonly HashSet<IntPtr> quickShortcutCycleVisitedHandles = new();
     private readonly object virtualDesktopCacheSync = new object();
     private Dictionary<Guid, string> virtualDesktopNames = new Dictionary<Guid, string>();
     private bool isVirtualDesktopCacheLoaded;
@@ -980,29 +982,25 @@ public partial class MainForm : Form
 
         var items = listBox1.Items.Cast<WindowItem>().ToList();
         int selectedIndex = listBox1.SelectedIndex;
-        WindowItem? item = null;
+        WindowItem? selectedItem = selectedIndex >= 0 ? items[selectedIndex] : null;
+        bool isRepeatedQuickShortcut = quickShortcutCycleKey == input;
 
-        if (selectedIndex >= 0)
+        WindowItem? item = isRepeatedQuickShortcut
+            ? FindNextMatchingWindow(items, selectedIndex, candidate =>
+                MatchKey(candidate) && !quickShortcutCycleVisitedHandles.Contains(candidate.Handle))
+            : null;
+
+        if (item is null)
         {
-            for (int offset = 1; offset < items.Count; offset++)
-            {
-                WindowItem candidate = items[(selectedIndex + offset) % items.Count];
-                if (MatchKey(candidate))
-                {
-                    item = candidate;
-                    break;
-                }
-            }
+            item = FindNextMatchingWindow(items, selectedIndex, MatchKey);
+            if (item is null) return false;
 
-            if (item is null && MatchKey(items[selectedIndex]))
-                item = items[selectedIndex];
+            BeginQuickShortcutCycle(input, selectedItem, item);
         }
         else
         {
-            item = items.FirstOrDefault(MatchKey);
+            quickShortcutCycleVisitedHandles.Add(item.Handle);
         }
-
-        if (item is null) return false;
         if (isOneWindowMode && !item.HighRelevance)
             FocusInOneWindow(item);
         else
@@ -1014,6 +1012,35 @@ public partial class MainForm : Form
         this.Hide();
         e.Handled = true;
         return true;
+    }
+
+    private static WindowItem? FindNextMatchingWindow(
+        IReadOnlyList<WindowItem> items,
+        int selectedIndex,
+        Func<WindowItem, bool> matches)
+    {
+        if (items.Count == 0) return null;
+        if (selectedIndex < 0 || selectedIndex >= items.Count)
+            return items.FirstOrDefault(matches);
+
+        for (int offset = 1; offset < items.Count; offset++)
+        {
+            WindowItem candidate = items[(selectedIndex + offset) % items.Count];
+            if (matches(candidate)) return candidate;
+        }
+
+        return matches(items[selectedIndex]) ? items[selectedIndex] : null;
+    }
+
+    private void BeginQuickShortcutCycle(char input, WindowItem? selectedItem, WindowItem target)
+    {
+        quickShortcutCycleKey = input;
+        quickShortcutCycleVisitedHandles.Clear();
+
+        if (selectedItem is not null)
+            quickShortcutCycleVisitedHandles.Add(selectedItem.Handle);
+
+        quickShortcutCycleVisitedHandles.Add(target.Handle);
     }
 
     private bool TryHandleAppExit(KeyEventArgs e)
