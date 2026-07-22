@@ -136,6 +136,7 @@
     <Compile Include="Util\WinHelper.cs" />
     <Compile Include="Util\WindowsApps.cs" />
     <Compile Include="WindowEffects.cs" />
+    <Compile Include="WindowLoadingDetector.cs" />
     <Compile Include="WindowPreview.cs" />
     <EmbeddedResource Include="Forms\SetAliasForm.resx">
       <DependentUpon>SetAliasForm.cs</DependentUpon>

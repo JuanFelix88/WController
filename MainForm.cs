@@ -38,6 +38,7 @@ public partial class MainForm : Form
     const int CURRENT_DESKTOP_HOTKEY_ID = 9001;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
+    const int LoadingBlinkIntervalMilliseconds = 700;
     const int MouseSelectionPollIntervalMilliseconds = 16;
     const int MouseSelectionStepPixels = 25;
     const int MouseSelectionHysteresisPixels = 10;
@@ -557,6 +558,7 @@ public partial class MainForm : Form
     private readonly Pen selectedIconicItemBorderPen;
     private readonly System.Windows.Forms.Timer previewUpdateTimer;
     private readonly System.Windows.Forms.Timer mouseSelectionTimer;
+    private readonly System.Windows.Forms.Timer loadingBlinkTimer;
     private Rectangle previewRectangle;
     private IntPtr previewHandle = IntPtr.Zero;
     private bool isOneWindowMode = false;
@@ -566,6 +568,8 @@ public partial class MainForm : Form
     private int mouseSelectionOriginY;
     private int mouseSelectionOriginIndex;
     private int mouseSelectionStep;
+    private bool isLoadingTextDimmed;
+    private bool isFormClosing;
 
     public MainForm()
     {
@@ -601,6 +605,8 @@ public partial class MainForm : Form
         previewUpdateTimer.Tick += this.OnPreviewUpdateTimerTick;
         mouseSelectionTimer = new System.Windows.Forms.Timer { Interval = MouseSelectionPollIntervalMilliseconds };
         mouseSelectionTimer.Tick += this.OnMouseSelectionTimerTick;
+        loadingBlinkTimer = new System.Windows.Forms.Timer { Interval = LoadingBlinkIntervalMilliseconds };
+        loadingBlinkTimer.Tick += this.OnLoadingBlinkTimerTick;
 
         listBox1.DrawMode = DrawMode.OwnerDrawFixed;
         listBox1.MeasureItem += this.OnListBox1MeasureItem;
@@ -1386,10 +1392,15 @@ public partial class MainForm : Form
     {
         if (!Visible)
         {
+            loadingBlinkTimer.Stop();
+            isLoadingTextDimmed = false;
             mouseSelectionTimer.Stop();
             RestoreSystemCursors();
             return;
         }
+
+        loadingBlinkTimer.Start();
+        QueueLoadingStateScan();
 
         if (!isMouseSelectionMode || listBox1.SelectedIndex < 0) return;
 
@@ -1397,6 +1408,70 @@ public partial class MainForm : Form
         ApplyMouseSelectionCursor();
         mouseSelectionTimer.Start();
         UpdateOneWindowModeIndicator();
+    }
+
+    private void OnLoadingBlinkTimerTick(object sender, EventArgs e)
+    {
+        if (!Visible || isFormClosing)
+            return;
+
+        isLoadingTextDimmed = !isLoadingTextDimmed;
+        InvalidateLoadingWindowTitles();
+        QueueLoadingStateScan();
+    }
+
+    private async void QueueLoadingStateScan()
+    {
+        if (!Visible || isFormClosing)
+            return;
+
+        IntPtr[] handles = listBox1.Items.Cast<WindowItem>()
+            .Select(item => item.Handle)
+            .Distinct()
+            .ToArray();
+        Dictionary<IntPtr, bool> loadingStates = await Task.Run(() => handles.ToDictionary(
+            handle => handle,
+            WindowLoadingDetector.IsLoading));
+
+        if (!Visible || isFormClosing)
+            return;
+
+        for (int index = 0; index < listBox1.Items.Count; index++)
+        {
+            WindowItem item = (WindowItem)listBox1.Items[index];
+            if (!loadingStates.TryGetValue(item.Handle, out bool isLoading) || item.IsLoading == isLoading)
+                continue;
+
+            item.IsLoading = isLoading;
+            InvalidateWindowTitle(index, item);
+        }
+    }
+
+    private void InvalidateLoadingWindowTitles()
+    {
+        for (int index = 0; index < listBox1.Items.Count; index++)
+        {
+            WindowItem item = (WindowItem)listBox1.Items[index];
+            if (item.IsLoading)
+                InvalidateWindowTitle(index, item);
+        }
+    }
+
+    private void InvalidateWindowTitle(int index, WindowItem item)
+    {
+        Rectangle itemBounds = listBox1.GetItemRectangle(index);
+        int titleHeight = item.ShowsDesktopTitle ? DesktopGroupTitleHeight : 0;
+        Rectangle contentBounds = new Rectangle(
+            itemBounds.X,
+            itemBounds.Y + titleHeight,
+            itemBounds.Width,
+            itemBounds.Height - titleHeight);
+        Rectangle textBounds = GetWindowTextBounds(contentBounds, item);
+        if (!isDesktopGroupedView)
+            textBounds.Width = Math.Min(textBounds.Width, item.GetTitleTextWidth(listBox1.Font) + 2);
+
+        if (textBounds.IntersectsWith(listBox1.ClientRectangle))
+            listBox1.Invalidate(textBounds, false);
     }
 
     private void ComputeLastSelectedIndex(int i)
@@ -1501,15 +1576,10 @@ public partial class MainForm : Form
             Rectangle shortRect = new Rectangle(textX, contentBounds.Y, 15, contentBounds.Height);
             TextRenderer.DrawText(e.Graphics, item.Shortcut, shortcutFont, shortRect, shortcutColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            textX += 12;
         }
 
-        int relevanceWidth = item.HighRelevance ? 12 : 0;
-        int textRight = contentBounds.Right - 4 - relevanceWidth;
-        Rectangle textRect = new Rectangle(textX, contentBounds.Y, Math.Max(0, textRight - textX), contentBounds.Height);
-        string displayText = isDesktopGroupedView ? item.ToStringWithoutShortcut() : item.ToDisplayString();
-        TextRenderer.DrawText(e.Graphics, displayText, lb.Font, textRect, foreColor,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+        Rectangle textRect = GetWindowTextBounds(contentBounds, item);
+        DrawWindowText(e.Graphics, lb, item, textRect, foreColor);
 
         if (selected)
         {
@@ -1528,6 +1598,51 @@ public partial class MainForm : Form
             e.Graphics.FillEllipse(Brushes.White, new Rectangle(circleX, circleY, diameter, diameter));
             e.Graphics.SmoothingMode = previousSmoothingMode;
         }
+    }
+
+    private static Rectangle GetWindowTextBounds(Rectangle contentBounds, WindowItem item)
+    {
+        int iconSize = contentBounds.Height - 4;
+        int textX = contentBounds.X + 2 + iconSize + 4;
+        if (!string.IsNullOrEmpty(item.Shortcut))
+            textX += 12;
+
+        int relevanceWidth = item.HighRelevance ? 12 : 0;
+        int textRight = contentBounds.Right - 4 - relevanceWidth;
+        return new Rectangle(textX, contentBounds.Y, Math.Max(0, textRight - textX), contentBounds.Height);
+    }
+
+    private void DrawWindowText(Graphics graphics, ListBox listBox, WindowItem item, Rectangle textBounds, Color foreColor)
+    {
+        const TextFormatFlags textFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+        string title = item.ToStringWithoutShortcut();
+        Color titleColor = item.IsLoading && isLoadingTextDimmed
+            ? IncrementColor(foreColor, multiplierOpacityDecrement - 0.25f)
+            : foreColor;
+
+        if (isDesktopGroupedView)
+        {
+            TextRenderer.DrawText(graphics, title, listBox.Font, textBounds, titleColor, textFlags);
+            return;
+        }
+
+        int titleWidth = Math.Min(textBounds.Width, item.GetTitleTextWidth(listBox.Font) + 1);
+        if (titleWidth >= textBounds.Width)
+        {
+            TextRenderer.DrawText(graphics, title, listBox.Font, textBounds, titleColor, textFlags);
+            return;
+        }
+
+        Rectangle titleBounds = new Rectangle(textBounds.X, textBounds.Y, titleWidth, textBounds.Height);
+        TextRenderer.DrawText(graphics, title, listBox.Font, titleBounds, titleColor, textFlags);
+
+        Rectangle desktopBounds = new Rectangle(
+            titleBounds.Right,
+            textBounds.Y,
+            textBounds.Right - titleBounds.Right,
+            textBounds.Height);
+        TextRenderer.DrawText(graphics, $" · {item.DesktopName}", listBox.Font, desktopBounds, foreColor, textFlags);
     }
 
     //private void ListBox1_DrawItem(object sender, DrawItemEventArgs e)
@@ -1965,8 +2080,10 @@ public partial class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        isFormClosing = true;
         previewUpdateTimer.Stop();
         mouseSelectionTimer.Stop();
+        loadingBlinkTimer.Stop();
         RestoreSystemCursors();
         CloseCurrentPreview();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
@@ -1975,6 +2092,7 @@ public partial class MainForm : Form
 
         previewUpdateTimer.Dispose();
         mouseSelectionTimer.Dispose();
+        loadingBlinkTimer.Dispose();
         listBackgroundBrush.Dispose();
         selectedItemBrush.Dispose();
         selectedIconicItemBrush.Dispose();
@@ -1988,7 +2106,8 @@ public partial class MainForm : Form
 
     public class WindowItem
     {
-        private string? displayText;
+        private Font? measuredTitleFont;
+        private int measuredTitleWidth;
 
         public required IntPtr Handle { get; set; }
         public required string Title
@@ -1997,29 +2116,22 @@ public partial class MainForm : Form
             set
             {
                 field = value;
-                displayText = null;
+                measuredTitleFont = null;
             }
         }
-        public required string DesktopName
-        {
-            get => field;
-            set
-            {
-                field = value;
-                displayText = null;
-            }
-        }
+        public required string DesktopName { get; set; }
         public required int TypeWindow { get; set; }
         public required int CountReferences { get; set; }
         public bool HighRelevance { get; set; } = false;
         public bool ShowsDesktopTitle { get; set; }
+        public bool IsLoading { get; set; }
         public required string? RenamedTitle
         {
             get => field;
             set
             {
                 field = value;
-                displayText = null;
+                measuredTitleFont = null;
             }
         }
         public required string Shortcut { get; set; } = string.Empty;
@@ -2043,9 +2155,18 @@ public partial class MainForm : Form
             return !string.IsNullOrEmpty(RenamedTitle) ? RenamedTitle! : Title;
         }
 
-        public string ToDisplayString()
+        public int GetTitleTextWidth(Font font)
         {
-            return displayText ??= $"{ToStringWithoutShortcut()} · {DesktopName}";
+            if (ReferenceEquals(measuredTitleFont, font))
+                return measuredTitleWidth;
+
+            measuredTitleFont = font;
+            measuredTitleWidth = TextRenderer.MeasureText(
+                ToStringWithoutShortcut(),
+                font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.NoPadding).Width;
+            return measuredTitleWidth;
         }
 
         public override string ToString()
