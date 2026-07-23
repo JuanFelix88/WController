@@ -38,7 +38,7 @@ public partial class MainForm : Form
     const int CURRENT_DESKTOP_HOTKEY_ID = 9001;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
-    const int LoadingBlinkIntervalMilliseconds = 700;
+    const int LoadingBlinkIntervalMilliseconds = 400;
     const int MouseSelectionPollIntervalMilliseconds = 16;
     const int MouseSelectionStepPixels = 25;
     const int MouseSelectionHysteresisPixels = 10;
