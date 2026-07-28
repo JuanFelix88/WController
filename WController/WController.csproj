@@ -183,6 +183,22 @@
   <ItemGroup>
     <Content Include="Restore Window.ico" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\WController.Plugin.GoogleSearch\WController.Plugin.GoogleSearch.csproj">
+      <Project>{67FC754B-69F6-48BA-957E-3B49D4EC97CB}</Project>
+      <Name>WController.Plugin.GoogleSearch</Name>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\WController.Plugin.ProjectsSearch\WController.Plugin.ProjectsSearch.csproj">
+      <Project>{BD7B108C-0F63-48B0-8F9C-8FAF92A3E18A}</Project>
+      <Name>WController.Plugin.ProjectsSearch</Name>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\WController.Plugin.Prompts\WController.Plugin.Prompts.csproj">
+      <Project>{0AEB318E-93EA-4C7C-8E45-98B31DD1FEAB}</Project>
+      <Name>WController.Plugin.Prompts</Name>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

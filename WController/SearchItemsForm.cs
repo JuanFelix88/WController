@@ -127,7 +127,7 @@ public partial class SearchItemsForm : Form
         pluginManager.PluginCalledByShortcut += this.OnPluginCalledByShortcut;
     }
 
-    private void OnPluginCalledByShortcut(Plugin plugin)
+    private void OnPluginCalledByShortcut(External.Plugin plugin)
     {
         if (!this.Visible) this.Show();
         this.Focus();
