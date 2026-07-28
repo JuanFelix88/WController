@@ -85,23 +85,20 @@ dotnet build --configuration Release
 
 ```
 WController/
-├── MainForm.cs              # Main application window
-├── MainForm.Designer.cs     # Main form UI design
-├── SearchItemsForm.cs       # Search functionality window
-├── RenameWindow.cs          # Window renaming dialog
-├── FileIndexes.cs           # File indexing functionality
-├── ShowDesktopHelper.cs     # Desktop management utilities
-├── Program.cs               # Application entry point
-├── Util/                    # Utility classes
-│   ├── Colors.cs           # Color management utilities
-│   ├── IconHelper.cs       # Icon handling utilities
-│   ├── Resizer.cs          # Window resizing utilities
-│   └── Text.cs             # Text processing utilities
-├── Properties/              # Assembly and application properties
-├── Resources/               # Application resources
-├── WController.csproj       # Project file
-└── WController.sln          # Solution file
+├── WController.sln
+├── WController/                         # Main application
+│   ├── WController.csproj
+│   ├── MainForm.cs
+│   ├── Forms/
+│   ├── Properties/
+│   ├── Resources/
+│   └── Util/
+├── WController.Plugin.GoogleSearch/
+├── WController.Plugin.ProjectsSearch/
+└── WController.Plugin.Prompts/
 ```
+
+The root solution contains the main application and all three plugins.
 
 ## 🔧 Build Configurations
 
@@ -109,16 +106,20 @@ WController/
 - **Purpose**: Development and debugging
 - **Optimization**: Disabled
 - **Debug Symbols**: Full
-- **Output**: `bin/Debug/`
+- **Output**: each project's `bin/Debug/`
 - **Defines**: `DEBUG;TRACE`
 
 ### Release Configuration
 - **Purpose**: Production deployment
 - **Optimization**: Enabled
 - **Debug Symbols**: PDB-only
-- **Output**: `bin/Release/`
+- **Output**: each project's `bin/Release/`
 - **Defines**: `TRACE`
 - **Platform Target**: Any CPU (with 32-bit preference disabled)
+
+### Plugin Deployment Configurations
+- **ToPlugin**: builds the application in Debug and copies plugin outputs to `WController/bin/Debug/`
+- **ToPluginRel**: builds the application in Release and copies plugin outputs to `WController/bin/Release/`
 
 ## 🐛 Debugging
 
@@ -179,7 +180,7 @@ WController/
 ### Release Build Process
 1. **Update Version Numbers**
    ```csharp
-   // Update in Properties/AssemblyInfo.cs
+   // Update in WController/Properties/AssemblyInfo.cs
    [assembly: AssemblyVersion("1.0.0.0")]
    [assembly: AssemblyFileVersion("1.0.0.0")]
    ```

@@ -6,7 +6,7 @@
     {
       "label": "Build Debug",
       "type": "shell",
-      "command": "msbuild WController.csproj -p:Configuration=Debug",
+      "command": "msbuild WController.sln -p:Configuration=Debug",
       "icon": {
         "color": "terminal.ansiYellow",
         "id": "debug"
@@ -16,7 +16,7 @@
     {
       "label": "Build Release",
       "type": "shell",
-      "command": "msbuild WController.csproj -p:Configuration=Release",
+      "command": "msbuild WController.sln -p:Configuration=Release",
       "icon": {
         "color": "terminal.ansiGreen",
         "id": "build"

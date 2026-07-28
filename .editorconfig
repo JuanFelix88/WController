@@ -253,9 +253,9 @@ dotnet_style_qualification_for_event = true:silent
 dotnet_style_readonly_field = true:suggestion
 end_of_line = crlf
 
-[*.cs]
+[WController/**.cs]
 
-# Promove nullability warnings
+# Promove nullability warnings apenas no projeto principal
 dotnet_diagnostic.CS8600.severity = error
 dotnet_diagnostic.CS8602.severity = error
 dotnet_diagnostic.CS8618.severity = error
