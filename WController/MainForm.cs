@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -35,7 +36,8 @@ public partial class MainForm : Form
     const int MOD_SHIFT = 0x4;
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
-    const int CURRENT_DESKTOP_HOTKEY_ID = 9001;
+    const int WINDOW_SEARCH_HOTKEY_ID = 9001;
+    const Keys WINDOW_PICKER_KEY = Keys.Oemtilde;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
     const int LoadingBlinkIntervalMilliseconds = 400;
@@ -152,7 +154,8 @@ public partial class MainForm : Form
     static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     const int SW_RESTORE = 9;
-    const int SW_MINIMIZE = 6;
+    const int SW_SHOWNOACTIVATE = 4;
+    const int SW_SHOWMINNOACTIVE = 7;
 
     const uint WM_SYSCOMMAND = 0x0112;
     const int SC_MINIMIZE = 0xF020;
@@ -540,6 +543,8 @@ public partial class MainForm : Form
     private bool isDesktopGroupedView;
     private bool isCurrentDesktopOnlyView;
     private bool isDesktopGroupingHotkeyInverted;
+    private bool isWindowSearchMode;
+    private readonly List<WindowItem> windowSearchItems = new();
     private Icon DefaultWindowIcon;
     private Image DefaultWindowIconImage;
     private Image DefaultWindowIconImageIconic;
@@ -612,11 +617,16 @@ public partial class MainForm : Form
         listBox1.MeasureItem += this.OnListBox1MeasureItem;
         listBox1.DrawItem += this.OnListBox1DrawItem;
         listBox1.SelectedIndexChanged += this.OnListBoxSelectedIndexChanged;
+        listBox1.KeyPress += this.OnWindowSearchListKeyPress;
+        textBoxWindowSearch.TextChanged += this.OnWindowSearchTextChanged;
+        textBoxWindowSearch.KeyDown += this.OnWindowSearchKeyDown;
+        pnLists.Resize += this.OnWindowListPanelResize;
 
         ComputeIgnoreWindows();
         LoadWindowList();
-        RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, Keys.Oemtilde);
-        RegisterHotKey(this.Handle, CURRENT_DESKTOP_HOTKEY_ID, MOD_ALT | MOD_SHIFT, Keys.Oemtilde);
+        // Preserve the existing physical key mapping used by both window-picker shortcuts.
+        RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, WINDOW_PICKER_KEY);
+        RegisterHotKey(this.Handle, WINDOW_SEARCH_HOTKEY_ID, MOD_ALT | MOD_SHIFT, WINDOW_PICKER_KEY);
         InstallKeyboardHook();
         //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
         //this.KeyDown += this.MainForm_KeyDown;
@@ -632,6 +642,7 @@ public partial class MainForm : Form
         {
             if (listBox1.SelectedItem is WindowItem item)
             {
+                ResetQuickShortcutCycleIfDifferent(item);
                 FocusWindow(item);
                 this.Hide();
             }
@@ -668,6 +679,274 @@ public partial class MainForm : Form
         agentChatForm.ShowAgent();
     }
 
+    private void OpenWindowSearch()
+    {
+        isWindowSearchMode = true;
+        SetWindowSearchLayout(true);
+        PerformLayout();
+
+        // Enumerate once when the mode opens. Typing only filters this in-memory snapshot.
+        LoadWindowList(false, false);
+        windowSearchItems.Clear();
+        windowSearchItems.AddRange(listBox1.Items.Cast<WindowItem>());
+
+        if (textBoxWindowSearch.TextLength == 0)
+            ApplyWindowSearch();
+        else
+            textBoxWindowSearch.Clear();
+        UpdateOneWindowModeIndicator();
+
+        if (!Visible)
+            Show();
+
+        Activate();
+        BringToFront();
+        textBoxWindowSearch.Focus();
+        Task.Delay(20).ContinueWith(t => Invoke(new Action(Invalidate)));
+    }
+
+    private void ExitWindowSearchMode()
+    {
+        if (!isWindowSearchMode) return;
+
+        isWindowSearchMode = false;
+        SetWindowSearchLayout(false);
+        textBoxWindowSearch.Clear();
+        windowSearchItems.Clear();
+    }
+
+    private void SetWindowSearchLayout(bool enabled)
+    {
+        textBoxWindowSearch.Visible = enabled;
+        if (!enabled)
+        {
+            listBox1.Dock = DockStyle.Fill;
+            return;
+        }
+
+        listBox1.Dock = DockStyle.None;
+        UpdateWindowSearchLayout();
+        textBoxWindowSearch.BringToFront();
+    }
+
+    private void OnWindowListPanelResize(object sender, EventArgs e)
+    {
+        if (isWindowSearchMode)
+            UpdateWindowSearchLayout();
+    }
+
+    private void UpdateWindowSearchLayout()
+    {
+        int searchHeight = textBoxWindowSearch.PreferredHeight;
+        textBoxWindowSearch.SetBounds(0, 0, pnLists.ClientSize.Width, searchHeight);
+        listBox1.SetBounds(
+            0,
+            searchHeight,
+            pnLists.ClientSize.Width,
+            Math.Max(0, pnLists.ClientSize.Height - searchHeight));
+    }
+
+    private void OnWindowSearchTextChanged(object sender, EventArgs e)
+    {
+        if (isWindowSearchMode)
+            ApplyWindowSearch();
+    }
+
+    private void ApplyWindowSearch()
+    {
+        string query = textBoxWindowSearch.Text.Trim();
+        WindowItem[] matches = query.Length == 0
+            ? Array.Empty<WindowItem>()
+            : windowSearchItems
+                .Select((item, index) => new
+                {
+                    Item = item,
+                    OriginalIndex = index,
+                    Score = GetWindowSearchScore(item, query)
+                })
+                .Where(match => match.Score >= 0)
+                .OrderByDescending(match => match.Score)
+                .ThenBy(match => match.OriginalIndex)
+                .Select(match => match.Item)
+                .ToArray();
+
+        listBox1.BeginUpdate();
+        try
+        {
+            listBox1.Items.Clear();
+            if (matches.Length > 0)
+            {
+                listBox1.Items.AddRange(matches);
+                listBox1.SelectedIndex = 0;
+            }
+        }
+        finally
+        {
+            listBox1.EndUpdate();
+        }
+
+        if (matches.Length == 0)
+        {
+            previewUpdateTimer.Stop();
+            CloseCurrentPreview();
+            lbPreview.Text = "No selected window";
+        }
+
+        ComputeHeightSize();
+        ApplyRoundedRegion(20);
+        listBox1.Invalidate();
+    }
+
+    private static int GetWindowSearchScore(WindowItem item, string query)
+    {
+        CompareInfo compareInfo = CultureInfo.CurrentCulture.CompareInfo;
+        const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+        int score = -1;
+
+        if (!string.IsNullOrEmpty(item.Shortcut))
+        {
+            score = Math.Max(score, ScoreTextMatch(
+                compareInfo,
+                item.Shortcut,
+                query,
+                options,
+                exactScore: 1_000_000,
+                prefixScore: 950_000,
+                wordPrefixScore: 700_000,
+                containsScore: 500_000));
+        }
+
+        string title = item.ToStringWithoutShortcut();
+        score = Math.Max(score, ScoreTextMatch(
+            compareInfo,
+            title,
+            query,
+            options,
+            exactScore: 900_000,
+            prefixScore: 850_000,
+            wordPrefixScore: 750_000,
+            containsScore: 400_000));
+
+        // Also match the exact textual composition rendered by the existing list.
+        score = Math.Max(score, ScoreTextMatch(
+            compareInfo,
+            item.ToString(),
+            query,
+            options,
+            exactScore: 925_000,
+            prefixScore: 875_000,
+            wordPrefixScore: 725_000,
+            containsScore: 300_000));
+
+        return score;
+    }
+
+    private static int ScoreTextMatch(
+        CompareInfo compareInfo,
+        string candidate,
+        string query,
+        CompareOptions options,
+        int exactScore,
+        int prefixScore,
+        int wordPrefixScore,
+        int containsScore)
+    {
+        if (compareInfo.Compare(candidate, query, options) == 0)
+            return exactScore;
+
+        if (compareInfo.IsPrefix(candidate, query, options))
+            return prefixScore - Math.Min(candidate.Length - query.Length, 1_000);
+
+        int wordPrefixIndex = FindWordPrefix(compareInfo, candidate, query, options);
+        if (wordPrefixIndex >= 0)
+            return wordPrefixScore - Math.Min(wordPrefixIndex, 1_000);
+
+        int containsIndex = compareInfo.IndexOf(candidate, query, options);
+        return containsIndex >= 0
+            ? containsScore - Math.Min(containsIndex, 1_000)
+            : -1;
+    }
+
+    private static int FindWordPrefix(
+        CompareInfo compareInfo,
+        string candidate,
+        string query,
+        CompareOptions options)
+    {
+        int startIndex = 0;
+        while (startIndex < candidate.Length)
+        {
+            int matchIndex = compareInfo.IndexOf(candidate, query, startIndex, options);
+            if (matchIndex < 0) return -1;
+            if (matchIndex == 0 || !char.IsLetterOrDigit(candidate[matchIndex - 1]))
+                return matchIndex;
+            startIndex = matchIndex + 1;
+        }
+
+        return -1;
+    }
+
+    private void OnWindowSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!isWindowSearchMode) return;
+
+        if (e.KeyCode == Keys.Down && listBox1.Items.Count > 0)
+        {
+            listBox1.SelectedIndex = Math.Min(listBox1.SelectedIndex + 1, listBox1.Items.Count - 1);
+        }
+        else if (e.KeyCode == Keys.Up && listBox1.Items.Count > 0)
+        {
+            listBox1.SelectedIndex = Math.Max(listBox1.SelectedIndex - 1, 0);
+        }
+        else if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem selectedWindow)
+        {
+            ActivateWindowSearchSelection(selectedWindow);
+        }
+        else if (e.KeyCode == Keys.Escape)
+        {
+            Hide();
+        }
+        else
+        {
+            return;
+        }
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+    }
+
+    private void OnWindowSearchListKeyPress(object sender, KeyPressEventArgs e)
+    {
+        if (!isWindowSearchMode) return;
+
+        if (e.KeyChar == '\b')
+        {
+            if (textBoxWindowSearch.TextLength > 0)
+                textBoxWindowSearch.Text = textBoxWindowSearch.Text.Substring(0, textBoxWindowSearch.TextLength - 1);
+        }
+        else if (!char.IsControl(e.KeyChar))
+        {
+            textBoxWindowSearch.AppendText(e.KeyChar.ToString());
+        }
+        else
+        {
+            return;
+        }
+
+        textBoxWindowSearch.SelectionStart = textBoxWindowSearch.TextLength;
+        textBoxWindowSearch.Focus();
+        e.Handled = true;
+    }
+
+    private void ActivateWindowSearchSelection(WindowItem selectedWindow)
+    {
+        ResetQuickShortcutCycleIfDifferent(selectedWindow);
+        if (windowSearchItems.Count > 0)
+            IncrementCount(windowSearchItems[0], selectedWindow);
+        FocusWindow(selectedWindow);
+        Hide();
+    }
+
     private static Pen CreateSelectedItemBorderPen(Color selectedColor)
     {
         var pen = new Pen(IncrementColor(selectedColor, 2f), 1.5f)
@@ -681,10 +960,11 @@ public partial class MainForm : Form
     {
         previewUpdateTimer.Stop();
 
-        if (isMouseSelectionMode && !isApplyingMouseSelection && listBox1.SelectedIndex >= 0)
+        if (!isWindowSearchMode && isMouseSelectionMode && !isApplyingMouseSelection && listBox1.SelectedIndex >= 0)
             ResetMouseSelectionAnchor();
 
-        bool hasActiveMode = isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode;
+        bool hasActiveMode = !isWindowSearchMode &&
+            (isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode);
         if (hasActiveMode)
             UpdateOneWindowModeIndicator();
 
@@ -967,6 +1247,24 @@ public partial class MainForm : Form
 
     private void OnListBox1KeyDown(object sender, KeyEventArgs e)
     {
+        if (isWindowSearchMode)
+        {
+            if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem selectedWindow)
+            {
+                ActivateWindowSearchSelection(selectedWindow);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                Hide();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            return;
+        }
+
+        if (TryHandleDesktopGroupActivation(e)) return;
         if (TryHandleKeybindForSingleMatchWindow(e)) return;
         if (TryHandleAppExit(e)) return;
         if (TryHandleWindowToggle(e)) return;
@@ -976,37 +1274,53 @@ public partial class MainForm : Form
         if (TryHandleViewModes(e)) return;
     }
 
-    private bool TryHandleKeybindForSingleMatchWindow(KeyEventArgs e)
+    private bool TryHandleDesktopGroupActivation(KeyEventArgs e)
     {
-        if (e.Shift || e.Control || e.Alt) return false;
-        if (!((e.KeyCode >= Keys.A && e.KeyCode <= Keys.Z) ||
-              (e.KeyCode >= Keys.D0 && e.KeyCode <= Keys.D9))) return false;
-
-        char input = char.ToLowerInvariant((char)e.KeyValue);
-        bool MatchKey(WindowItem w) =>
-            char.ToLowerInvariant((!string.IsNullOrEmpty(w.Shortcut) ? w.Shortcut[0] : w.ToStringWithoutShortcut()[0])) == input;
+        if (!isDesktopGroupedView || !e.Alt || e.Shift || e.Control)
+            return false;
 
         var items = listBox1.Items.Cast<WindowItem>().ToList();
-        int selectedIndex = listBox1.SelectedIndex;
-        WindowItem? selectedItem = selectedIndex >= 0 ? items[selectedIndex] : null;
-        bool isRepeatedQuickShortcut = quickShortcutCycleKey == input;
+        WindowItem? target;
+        char shortcutKey;
 
-        WindowItem? item = isRepeatedQuickShortcut
-            ? FindNextMatchingWindow(items, selectedIndex, candidate =>
-                MatchKey(candidate) && !quickShortcutCycleVisitedHandles.Contains(candidate.Handle))
-            : null;
-
-        if (item is null)
+        if (IsQuickShortcutInput(e.KeyCode))
         {
-            item = FindNextMatchingWindow(items, selectedIndex, MatchKey);
-            if (item is null) return false;
-
-            BeginQuickShortcutCycle(input, selectedItem, item);
+            shortcutKey = char.ToLowerInvariant((char)e.KeyValue);
+            target = FindQuickShortcutTarget(items, shortcutKey);
+            if (target is null)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return true;
+            }
+        }
+        else if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem selectedWindow)
+        {
+            target = selectedWindow;
+            ResetQuickShortcutCycleIfDifferent(target);
+            shortcutKey = GetQuickShortcutKey(target);
         }
         else
         {
-            quickShortcutCycleVisitedHandles.Add(item.Handle);
+            return false;
         }
+
+        ActivateMatchingWindowsOnDesktop(items, target, shortcutKey);
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+        return true;
+    }
+
+    private bool TryHandleKeybindForSingleMatchWindow(KeyEventArgs e)
+    {
+        if (e.Shift || e.Control || e.Alt || !IsQuickShortcutInput(e.KeyCode))
+            return false;
+
+        char input = char.ToLowerInvariant((char)e.KeyValue);
+        var items = listBox1.Items.Cast<WindowItem>().ToList();
+        WindowItem? item = FindQuickShortcutTarget(items, input);
+        if (item is null) return false;
+
         if (isOneWindowMode && !item.HighRelevance)
             FocusInOneWindow(item);
         else
@@ -1018,6 +1332,76 @@ public partial class MainForm : Form
         this.Hide();
         e.Handled = true;
         return true;
+    }
+
+    private static bool IsQuickShortcutInput(Keys keyCode)
+    {
+        return (keyCode >= Keys.A && keyCode <= Keys.Z) ||
+               (keyCode >= Keys.D0 && keyCode <= Keys.D9);
+    }
+
+    private WindowItem? FindQuickShortcutTarget(IReadOnlyList<WindowItem> items, char input)
+    {
+        bool MatchKey(WindowItem window) => GetQuickShortcutKey(window) == input;
+
+        int selectedIndex = listBox1.SelectedIndex;
+        WindowItem? selectedItem = selectedIndex >= 0 && selectedIndex < items.Count
+            ? items[selectedIndex]
+            : null;
+        bool isRepeatedQuickShortcut = quickShortcutCycleKey == input;
+
+        WindowItem? target = isRepeatedQuickShortcut
+            ? FindNextMatchingWindow(items, selectedIndex, candidate =>
+                MatchKey(candidate) && !quickShortcutCycleVisitedHandles.Contains(candidate.Handle))
+            : null;
+
+        if (target is null)
+        {
+            target = FindNextMatchingWindow(items, selectedIndex, MatchKey);
+            if (target is null) return null;
+
+            BeginQuickShortcutCycle(input, selectedItem, target);
+        }
+        else
+        {
+            quickShortcutCycleVisitedHandles.Add(target.Handle);
+        }
+
+        return target;
+    }
+
+    private void ActivateMatchingWindowsOnDesktop(
+        IReadOnlyList<WindowItem> items,
+        WindowItem target,
+        char shortcutKey)
+    {
+        List<WindowItem> desktopWindows = items
+            .Where(window => window.DesktopId == target.DesktopId)
+            .ToList();
+        List<WindowItem> matchingWindows = desktopWindows
+            .Where(window => GetQuickShortcutKey(window) == shortcutKey)
+            .ToList();
+        var matchingHandles = new HashSet<IntPtr>(matchingWindows.Select(window => window.Handle));
+
+        Hide();
+
+        foreach (WindowItem window in desktopWindows)
+        {
+            if (!matchingHandles.Contains(window.Handle) && IsWindow(window.Handle) && !IsIconic(window.Handle))
+                ShowWindow(window.Handle, SW_SHOWMINNOACTIVE);
+        }
+
+        foreach (WindowItem window in matchingWindows)
+        {
+            if (IsWindow(window.Handle) && IsIconic(window.Handle))
+                ShowWindow(window.Handle, SW_SHOWNOACTIVATE);
+        }
+
+        if (IsWindow(target.Handle))
+            FocusWindow(target);
+
+        if (items.Count > 0)
+            IncrementCount(items[0], target);
     }
 
     private static WindowItem? FindNextMatchingWindow(
@@ -1047,6 +1431,22 @@ public partial class MainForm : Form
             quickShortcutCycleVisitedHandles.Add(selectedItem.Handle);
 
         quickShortcutCycleVisitedHandles.Add(target.Handle);
+    }
+
+    private static char GetQuickShortcutKey(WindowItem window)
+    {
+        return char.ToLowerInvariant(!string.IsNullOrEmpty(window.Shortcut)
+            ? window.Shortcut[0]
+            : window.ToStringWithoutShortcut()[0]);
+    }
+
+    private void ResetQuickShortcutCycleIfDifferent(WindowItem window)
+    {
+        if (quickShortcutCycleKey is null || quickShortcutCycleKey == GetQuickShortcutKey(window))
+            return;
+
+        quickShortcutCycleKey = null;
+        quickShortcutCycleVisitedHandles.Clear();
     }
 
     private bool TryHandleAppExit(KeyEventArgs e)
@@ -1109,6 +1509,7 @@ public partial class MainForm : Form
         }
         if (e.Shift && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem itemInforceSaltsIncrements)
         {
+            ResetQuickShortcutCycleIfDifferent(itemInforceSaltsIncrements);
             int adderForClustering = 40;
             if (isOneWindowMode && !itemInforceSaltsIncrements.HighRelevance)
             {
@@ -1132,6 +1533,7 @@ public partial class MainForm : Form
         }
         if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
         {
+            ResetQuickShortcutCycleIfDifferent(windowToFocusWithControl);
             // inverted:
             if (isOneWindowMode)
             {
@@ -1150,6 +1552,7 @@ public partial class MainForm : Form
         }
         if (e.KeyCode == Keys.Space && !e.Shift && !e.Control && !e.Alt && listBox1.SelectedItem is WindowItem itemSpace)
         {
+            ResetQuickShortcutCycleIfDifferent(itemSpace);
             if (isOneWindowMode && !itemSpace.HighRelevance)
             {
                 FocusInOneWindow(itemSpace);
@@ -1168,6 +1571,7 @@ public partial class MainForm : Form
         }
         if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
         {
+            ResetQuickShortcutCycleIfDifferent(item);
             if (isOneWindowMode && !item.HighRelevance)
             {
                 FocusInOneWindow(item);
@@ -1396,13 +1800,14 @@ public partial class MainForm : Form
             isLoadingTextDimmed = false;
             mouseSelectionTimer.Stop();
             RestoreSystemCursors();
+            ExitWindowSearchMode();
             return;
         }
 
         loadingBlinkTimer.Start();
         QueueLoadingStateScan();
 
-        if (!isMouseSelectionMode || listBox1.SelectedIndex < 0) return;
+        if (isWindowSearchMode || !isMouseSelectionMode || listBox1.SelectedIndex < 0) return;
 
         ResetMouseSelectionAnchor();
         ApplyMouseSelectionCursor();
@@ -1483,7 +1888,8 @@ public partial class MainForm : Form
 
     private void UpdateOneWindowModeIndicator()
     {
-        if (isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode)
+        if (!isWindowSearchMode &&
+            (isDesktopGroupingHotkeyInverted || isOneWindowMode || isMouseSelectionMode))
         {
             var activeModes = new List<string>();
             if (isDesktopGroupingHotkeyInverted)
@@ -1511,7 +1917,8 @@ public partial class MainForm : Form
             for (int index = 0; index < listBox1.Items.Count; index++)
                 itemsHeight += listBox1.GetItemHeight(index);
 
-            int height = itemsHeight + this.Padding.Vertical;
+            int searchHeight = textBoxWindowSearch.Visible ? textBoxWindowSearch.Height : 0;
+            int height = itemsHeight + searchHeight + this.Padding.Vertical;
             this.Height = height < 345 ? 345 : height;
         };
 
@@ -1884,6 +2291,7 @@ public partial class MainForm : Form
                 Handle = hWnd,
                 TypeWindow = GetTypeWindow(hWnd),
                 Title = sb.ToString(),
+                DesktopId = desktopId,
                 DesktopName = desktopName,
                 RenamedTitle = renamedTitleFetchResult,
                 Icon = images.Icon,
@@ -1964,7 +2372,10 @@ public partial class MainForm : Form
     private void buttonFocus_Click(object sender, EventArgs e)
     {
         if (listBox1.SelectedItem is WindowItem item)
+        {
+            ResetQuickShortcutCycleIfDifferent(item);
             SetForegroundWindow(item.Handle);
+        }
     }
 
     private void SelectNextItem()
@@ -1984,12 +2395,15 @@ public partial class MainForm : Form
         if (m.Msg == WM_HOTKEY)
         {
             int hotkeyId = m.WParam.ToInt32();
-            if (hotkeyId == HOTKEY_ID || hotkeyId == CURRENT_DESKTOP_HOTKEY_ID)
+            if (hotkeyId == HOTKEY_ID)
             {
-                bool currentDesktopHotkeyPressed = hotkeyId == CURRENT_DESKTOP_HOTKEY_ID;
-                ToggleWindowList(isDesktopGroupingHotkeyInverted, currentDesktopHotkeyPressed);
+                ToggleWindowList(isDesktopGroupingHotkeyInverted, false);
                 if (isMouseSelectionMode)
                     PositionCursorForMouseSelection();
+            }
+            else if (hotkeyId == WINDOW_SEARCH_HOTKEY_ID)
+            {
+                OpenWindowSearch();
             }
         }
 
@@ -2006,13 +2420,15 @@ public partial class MainForm : Form
 
     private void ToggleWindowList(bool groupByDesktop, bool currentDesktopOnly)
     {
-        if (Visible && isDesktopGroupedView == groupByDesktop && isCurrentDesktopOnlyView == currentDesktopOnly)
+        if (Visible && !isWindowSearchMode && isDesktopGroupedView == groupByDesktop && isCurrentDesktopOnlyView == currentDesktopOnly)
         {
             SelectNextItem();
             Activate();
+            listBox1.Focus();
             return;
         }
 
+        ExitWindowSearchMode();
         PerformLayout();
         LoadWindowList(groupByDesktop, currentDesktopOnly);
         if (listBox1.Items.Count > 0)
@@ -2022,6 +2438,7 @@ public partial class MainForm : Form
         Show();
         Activate();
         BringToFront();
+        listBox1.Focus();
         Task.Delay(20).ContinueWith(t => Invoke(new Action(Invalidate)));
     }
 
@@ -2087,7 +2504,7 @@ public partial class MainForm : Form
         RestoreSystemCursors();
         CloseCurrentPreview();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
-        UnregisterHotKey(this.Handle, CURRENT_DESKTOP_HOTKEY_ID);
+        UnregisterHotKey(this.Handle, WINDOW_SEARCH_HOTKEY_ID);
         UninstallKeyboardHook();
 
         previewUpdateTimer.Dispose();
@@ -2119,6 +2536,7 @@ public partial class MainForm : Form
                 measuredTitleFont = null;
             }
         }
+        public required Guid DesktopId { get; set; }
         public required string DesktopName { get; set; }
         public required int TypeWindow { get; set; }
         public required int CountReferences { get; set; }

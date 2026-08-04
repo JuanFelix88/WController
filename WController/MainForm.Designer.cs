@@ -30,6 +30,7 @@
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             this.listBox1 = new System.Windows.Forms.ListBox();
+            this.textBoxWindowSearch = new System.Windows.Forms.TextBox();
             this.pnLists = new System.Windows.Forms.Panel();
             this.pnPreview = new System.Windows.Forms.Panel();
             this.lbPreview = new System.Windows.Forms.Label();
@@ -52,11 +53,24 @@
             this.listBox1.Margin = new System.Windows.Forms.Padding(0);
             this.listBox1.Name = "listBox1";
             this.listBox1.Size = new System.Drawing.Size(437, 340);
-            this.listBox1.TabIndex = 0;
+            this.listBox1.TabIndex = 1;
+            //
+            // textBoxWindowSearch
+            //
+            this.textBoxWindowSearch.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(40)))), ((int)(((byte)(40)))), ((int)(((byte)(40)))));
+            this.textBoxWindowSearch.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.textBoxWindowSearch.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.textBoxWindowSearch.ForeColor = System.Drawing.Color.White;
+            this.textBoxWindowSearch.Location = new System.Drawing.Point(0, 0);
+            this.textBoxWindowSearch.Name = "textBoxWindowSearch";
+            this.textBoxWindowSearch.Size = new System.Drawing.Size(437, 26);
+            this.textBoxWindowSearch.TabIndex = 0;
+            this.textBoxWindowSearch.Visible = false;
             // 
             // pnLists
             // 
             this.pnLists.Controls.Add(this.listBox1);
+            this.pnLists.Controls.Add(this.textBoxWindowSearch);
             this.pnLists.Dock = System.Windows.Forms.DockStyle.Left;
             this.pnLists.Location = new System.Drawing.Point(8, 8);
             this.pnLists.Name = "pnLists";
@@ -123,6 +137,7 @@
         #endregion
 
         private System.Windows.Forms.ListBox listBox1;
+        private System.Windows.Forms.TextBox textBoxWindowSearch;
         private System.Windows.Forms.Panel pnLists;
         private System.Windows.Forms.Panel pnPreview;
         private System.Windows.Forms.Label lbPreview;
