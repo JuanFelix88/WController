@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -28,6 +29,8 @@ public partial class SearchItemsForm : Form
     const int MOD_WIN = 0x8;
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
+    const int MaxDefaultSearchResults = 10;
+    const int WindowScoreBoost = 100;
 
     delegate bool EnumWindowsPrc(IntPtr hWnd, IntPtr lParam);
 
@@ -91,9 +94,14 @@ public partial class SearchItemsForm : Form
     private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
     private readonly FileIndexes fileIndexes = new FileIndexes();
     private readonly PluginManager pluginManager = new();
+    private readonly MainForm windowManager;
+    private readonly Font windowShortcutFont = new Font("Consolas", 10, FontStyle.Underline);
+    private MainForm.WindowItem[]? windowSearchItems;
+    private int searchRequestVersion;
 
-    public SearchItemsForm()
+    public SearchItemsForm(MainForm windowManager)
     {
+        this.windowManager = windowManager;
         AccentColor = GetWindowsAccentColor();
         SecondaryColor = GetWindowsSecondaryColor();
         InitializeComponent();
@@ -116,10 +124,7 @@ public partial class SearchItemsForm : Form
         this.Deactivate += this.OnDeactivate;
         this.VisibleChanged += this.OnVisibleChanged;
 
-        listBox1.DoubleClick += (s, e) =>
-        {
-            ((ItemSelectable)listBox1.Items[listBox1.SelectedIndex]).Open();
-        };
+        listBox1.DoubleClick += (s, e) => OpenSelectedItem();
 
         listBox1.KeyDown += this.OnListBoxKeyDown;
         ComputeHeightSize();
@@ -129,6 +134,8 @@ public partial class SearchItemsForm : Form
 
     private void OnPluginCalledByShortcut(External.Plugin plugin)
     {
+        searchRequestVersion++;
+        windowSearchItems = null;
         if (!this.Visible) this.Show();
         this.Focus();
         this.textBox.Text = plugin.Shortcut + ": ";
@@ -157,6 +164,8 @@ public partial class SearchItemsForm : Form
     {
         if (!this.Visible)
         {
+            searchRequestVersion++;
+            windowSearchItems = null;
             listBox1.Items.Clear();
         }
     }
@@ -193,23 +202,34 @@ public partial class SearchItemsForm : Form
             return;
         }
 
-        // file search (default):
+        // Default search preserves the existing program index and adds open windows only for typed queries.
         textBox.ForeColor = Color.White;
-        var shortcuts = fileIndexes.SearchFiles(text);
+        var programs = fileIndexes.SearchFiles(text, take: 100).ToArray();
+        var windows = string.IsNullOrWhiteSpace(text)
+            ? Array.Empty<MainForm.WindowItem>()
+            : windowSearchItems ??= windowManager.GetSearchWindowItems().ToArray();
+        var results = programs
+            .Select((program, index) => new SearchItemResult(program, GetSearchScore(program.Name, text), index))
+            .Where(result => result.Score >= 0)
+            .Concat(windows
+                .Select((window, index) => new SearchItemResult(
+                    window,
+                    GetWindowSearchScore(window, text),
+                    programs.Length + index))
+                .Where(result => result.Score >= 0))
+            .OrderByDescending(result => result.Score)
+            .ThenBy(result => result.OriginalIndex)
+            .Take(MaxDefaultSearchResults)
+            .ToArray();
+
         listBox1.SuspendLayout();
         listBox1.Items.Clear();
-
-        foreach (var shortcut in shortcuts)
-        {
-            listBox1.Items.Add(shortcut);
-        }
+        foreach (var result in results)
+            listBox1.Items.Add(result.Item);
 
         listBox1.Height = (listBox1.Items.Count * 24) + 5;
-
-        if (shortcuts.Any())
-        {
+        if (results.Length > 0)
             listBox1.SelectedIndex = 0;
-        }
 
         listBox1.ResumeLayout();
         ComputeHeightSize();
@@ -239,19 +259,10 @@ public partial class SearchItemsForm : Form
             return;
         }
 
-        if (e.KeyCode == Keys.Enter && listBox1.Items[listBox1.SelectedIndex] is FileIndexed fileIndexed)
+        if (e.KeyCode == Keys.Enter)
         {
             e.SuppressKeyPress = true;
-            fileIndexed.Open();
-            this.Hide();
-            return;
-        }
-
-        if (e.KeyCode == Keys.Enter && listBox1.Items[listBox1.SelectedIndex] is PluginItem pluginItem)
-        {
-            e.SuppressKeyPress = true;
-            pluginItem.Open();
-            this.Hide();
+            OpenSelectedItem();
             return;
         }
 
@@ -261,7 +272,11 @@ public partial class SearchItemsForm : Form
             e.SuppressKeyPress = true;
         }
 
+        int requestVersion = ++searchRequestVersion;
         await Task.Delay(10);
+        if (!Visible || requestVersion != searchRequestVersion)
+            return;
+
         SearchWithText(textBox.Text);
         lbPlaceHolder.Visible = textBox.Text.Length == 0;
     }
@@ -285,14 +300,70 @@ public partial class SearchItemsForm : Form
             this.Hide();
             return;
         }
-        if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is FileIndexed item)
+        if (e.KeyCode == Keys.Enter)
         {
-            item.Open();
-            this.Hide();
-            return;
+            OpenSelectedItem();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
         }
     }
 
+    private void OpenSelectedItem()
+    {
+        if (listBox1.SelectedItem is MainForm.WindowItem window)
+        {
+            if (windowManager.ActivateWindowFromSearch(window))
+                Hide();
+            return;
+        }
+
+        if (listBox1.SelectedItem is ItemSelectable item)
+        {
+            item.Open();
+            Hide();
+        }
+    }
+
+    private static int GetWindowSearchScore(MainForm.WindowItem window, string query)
+    {
+        int score = Math.Max(
+            GetSearchScore(window.ToStringWithoutShortcut(), query),
+            GetSearchScore(window.Shortcut, query));
+        return score < 0 ? score : score + WindowScoreBoost;
+    }
+
+    private static int GetSearchScore(string candidate, string query)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(query)) return -1;
+
+        CompareInfo comparer = CultureInfo.CurrentCulture.CompareInfo;
+        const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+        if (comparer.Compare(candidate, query, options) == 0) return 1_000_000;
+        if (comparer.IsPrefix(candidate, query, options)) return 900_000 - Math.Min(candidate.Length - query.Length, 1_000);
+
+        int wordPrefix = candidate.Split([' ', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => comparer.IsPrefix(part, query, options))
+            .ToList()
+            .FindIndex(isPrefix => isPrefix);
+        if (wordPrefix >= 0) return 800_000 - wordPrefix;
+
+        int contains = comparer.IndexOf(candidate, query, options);
+        return contains >= 0 ? 700_000 - Math.Min(contains, 1_000) : -1;
+    }
+
+    private sealed class SearchItemResult
+    {
+        public object Item { get; }
+        public int Score { get; }
+        public int OriginalIndex { get; }
+
+        public SearchItemResult(object item, int score, int originalIndex)
+        {
+            Item = item;
+            Score = score;
+            OriginalIndex = originalIndex;
+        }
+    }
 
     private void ComputeHeightSize()
     {
@@ -316,37 +387,79 @@ public partial class SearchItemsForm : Form
         if (e.Index < 0) return;
 
         ListBox lb = (ListBox)sender;
-        string text = lb.Items[e.Index].ToString();
-        bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+        if (lb.Items[e.Index] is MainForm.WindowItem window)
+        {
+            DrawWindowItem(e, lb, window);
+            return;
+        }
 
+        if (lb.Items[e.Index] is not ItemSelectable item) return;
+
+        bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
         Color backColor = selected ? TertiaryColor : lb.BackColor;
         Color foreColor = selected ? Color.White : lb.ForeColor;
-
-        e.Graphics.FillRectangle(new SolidBrush(backColor), e.Bounds);
+        using var background = new SolidBrush(backColor);
+        e.Graphics.FillRectangle(background, e.Bounds);
 
         int iconSize = e.Bounds.Height - 4;
-        Image icon = ((ItemSelectable)lb.Items[e.Index]).Image;
-
         Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
+        if (item.Image is not null)
+            e.Graphics.DrawImage(item.Image, iconRect);
 
-        if (icon != null)
-            e.Graphics.DrawImage(icon, iconRect);
-
-        int textX = iconRect.Right + 4;
-
-        Rectangle textRect = new Rectangle(textX, e.Bounds.Y, e.Bounds.Width - textX, e.Bounds.Height);
-        TextRenderer.DrawText(e.Graphics, text, lb.Font, textRect, foreColor,
+        Rectangle textRect = new Rectangle(iconRect.Right + 4, e.Bounds.Y, e.Bounds.Right - iconRect.Right - 4, e.Bounds.Height);
+        TextRenderer.DrawText(e.Graphics, item.ToString(), lb.Font, textRect, foreColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
         if (selected)
+            DrawSelectionBorder(e.Graphics, e.Bounds, TertiaryColor);
+    }
+
+    private void DrawWindowItem(DrawItemEventArgs e, ListBox listBox, MainForm.WindowItem item)
+    {
+        bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+        Color selectedColor = item.IsIconic ? IncrementColor(TertiaryColor, 0.8f) : TertiaryColor;
+        Color backColor = selected ? selectedColor : listBox.BackColor;
+        Color foreColor = selected ? Color.White : listBox.ForeColor;
+        Color shortcutColor = Color.FromArgb(180, 255, 180);
+        if (item.IsIconic)
         {
-            using (Pen borderPen = new Pen(IncrementColor(TertiaryColor, 2f), 1.5f))
-            {
-                borderPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
-                Rectangle borderRect = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
-                e.Graphics.DrawRectangle(borderPen, borderRect);
-            }
+            foreColor = IncrementColor(foreColor, 0.8f);
+            shortcutColor = IncrementColor(shortcutColor, 0.8f);
         }
+
+        using var background = new SolidBrush(backColor);
+        e.Graphics.FillRectangle(background, e.Bounds);
+
+        int iconSize = e.Bounds.Height - 4;
+        Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
+        e.Graphics.DrawImage(item.OutIcon, iconRect);
+
+        int textX = iconRect.Right + 4;
+        if (!string.IsNullOrEmpty(item.Shortcut))
+        {
+            var shortcutBounds = new Rectangle(textX, e.Bounds.Y, 15, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, item.Shortcut, windowShortcutFont, shortcutBounds, shortcutColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            textX += 12;
+        }
+
+        int relevanceWidth = item.HighRelevance ? 12 : 0;
+        Rectangle textBounds = new Rectangle(textX, e.Bounds.Y, Math.Max(0, e.Bounds.Right - textX - 4 - relevanceWidth), e.Bounds.Height);
+        string title = item.ToStringWithoutShortcut();
+        TextRenderer.DrawText(e.Graphics, title, listBox.Font, textBounds, foreColor,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+
+        if (selected)
+            DrawSelectionBorder(e.Graphics, e.Bounds, selectedColor);
+
+        if (item.HighRelevance)
+            e.Graphics.FillEllipse(Brushes.White, new Rectangle(e.Bounds.Right - 10, e.Bounds.Top + (e.Bounds.Height - 6) / 2, 6, 6));
+    }
+
+    private void DrawSelectionBorder(Graphics graphics, Rectangle bounds, Color selectedColor)
+    {
+        using var borderPen = new Pen(IncrementColor(selectedColor, 2f), 1.5f) { DashStyle = DashStyle.Dot };
+        graphics.DrawRectangle(borderPen, new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1));
     }
 
     private void OnPaint(object sender, PaintEventArgs e)
@@ -431,6 +544,9 @@ public partial class SearchItemsForm : Form
                 this.Activate();
                 this.BringToFront();
                 this.Refresh();
+                searchRequestVersion++;
+                windowSearchItems = null;
+                listBox1.Items.Clear();
                 this.textBox.Text = string.Empty;
                 lbPlaceHolder.Visible = textBox.Text.Length == 0;
                 this.textBox.Focus();
@@ -443,6 +559,7 @@ public partial class SearchItemsForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         pluginManager.RemoveAllListenersHotKeys();
+        windowShortcutFont.Dispose();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
         base.OnFormClosing(e);
     }
