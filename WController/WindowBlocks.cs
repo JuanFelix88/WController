@@ -36,17 +36,21 @@ internal sealed class WindowBlocks : IDisposable
         Reload();
     }
 
-    internal bool IsBlocked(string title)
+    internal Func<string, bool> GetMatcher()
     {
         Regex[] snapshot;
         lock (sync)
         {
-            // An activation need not wait for the watcher debounce to expire.
+            // Capture one rule set for the entire window-list lifecycle.
             if (reloadPending && !disposed)
                 ReloadRules();
             snapshot = rules;
         }
+        return title => IsBlocked(snapshot, title);
+    }
 
+    private static bool IsBlocked(Regex[] snapshot, string title)
+    {
         foreach (Regex rule in snapshot)
         {
             try

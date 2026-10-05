@@ -417,14 +417,16 @@ public partial class SearchItemsForm : Form
     private void DrawWindowItem(DrawItemEventArgs e, ListBox listBox, MainForm.WindowItem item)
     {
         bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-        Color selectedColor = item.IsIconic ? IncrementColor(TertiaryColor, 0.8f) : TertiaryColor;
+        bool enabled = item.Enabled;
+        float opacity = !enabled ? MainForm.DisabledWindowOpacity : (item.IsIconic ? 0.8f : 1f);
+        Color selectedColor = IncrementColor(TertiaryColor, opacity);
         Color backColor = selected ? selectedColor : listBox.BackColor;
         Color foreColor = selected ? Color.White : listBox.ForeColor;
         Color shortcutColor = Color.FromArgb(180, 255, 180);
-        if (item.IsIconic)
+        if (opacity < 1f)
         {
-            foreColor = IncrementColor(foreColor, 0.8f);
-            shortcutColor = IncrementColor(shortcutColor, 0.8f);
+            foreColor = IncrementColor(foreColor, opacity);
+            shortcutColor = IncrementColor(shortcutColor, opacity);
         }
 
         using var background = new SolidBrush(backColor);
@@ -432,7 +434,7 @@ public partial class SearchItemsForm : Form
 
         int iconSize = e.Bounds.Height - 4;
         Rectangle iconRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, iconSize, iconSize);
-        e.Graphics.DrawImage(item.OutIcon, iconRect);
+        MainForm.DrawWindowIcon(e.Graphics, item, iconRect, enabled);
 
         int textX = iconRect.Right + 4;
         if (!string.IsNullOrEmpty(item.Shortcut))

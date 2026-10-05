@@ -5,6 +5,7 @@ using System.Data;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using Microsoft.Win32;
@@ -549,13 +550,16 @@ public partial class MainForm : Form
     private System.Timers.Timer temporaryTimerChecker = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private System.Timers.Timer temporaryTimer = new System.Timers.Timer(TimeSpan.FromSeconds(10).TotalMilliseconds);
     private float multiplierOpacityDecrement = 0.8f;
+    internal const float DisabledWindowOpacity = 0.45f;
     private Font shortcutFont = new Font("Consolas", 10, FontStyle.Underline);
     private Font desktopTitleFont = new Font("Consolas", 10, FontStyle.Regular);
     private readonly SolidBrush listBackgroundBrush;
     private readonly SolidBrush selectedItemBrush;
     private readonly SolidBrush selectedIconicItemBrush;
+    private readonly SolidBrush selectedDisabledItemBrush;
     private readonly Pen selectedItemBorderPen;
     private readonly Pen selectedIconicItemBorderPen;
+    private readonly Pen selectedDisabledItemBorderPen;
     private readonly System.Windows.Forms.Timer previewUpdateTimer;
     private readonly System.Windows.Forms.Timer mouseSelectionTimer;
     private readonly System.Windows.Forms.Timer loadingBlinkTimer;
@@ -597,11 +601,14 @@ public partial class MainForm : Form
         listBox1.BackColor = accentColor;
 
         Color selectedIconicColor = IncrementColor(TertiaryColor, multiplierOpacityDecrement);
+        Color selectedDisabledColor = IncrementColor(TertiaryColor, DisabledWindowOpacity);
         listBackgroundBrush = new SolidBrush(accentColor);
         selectedItemBrush = new SolidBrush(TertiaryColor);
         selectedIconicItemBrush = new SolidBrush(selectedIconicColor);
+        selectedDisabledItemBrush = new SolidBrush(selectedDisabledColor);
         selectedItemBorderPen = CreateSelectedItemBorderPen(TertiaryColor);
         selectedIconicItemBorderPen = CreateSelectedItemBorderPen(selectedIconicColor);
+        selectedDisabledItemBorderPen = CreateSelectedItemBorderPen(selectedDisabledColor);
         previewUpdateTimer = new System.Windows.Forms.Timer { Interval = PreviewUpdateDelayMilliseconds };
         previewUpdateTimer.Tick += this.OnPreviewUpdateTimerTick;
         mouseSelectionTimer = new System.Windows.Forms.Timer { Interval = MouseSelectionPollIntervalMilliseconds };
@@ -1584,20 +1591,22 @@ public partial class MainForm : Form
         ListBox lb = (ListBox)sender;
         WindowItem item = (WindowItem)lb.Items[e.Index];
         bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+        bool enabled = item.Enabled;
+        float opacity = !enabled ? DisabledWindowOpacity : (item.IsIconic ? multiplierOpacityDecrement : 1f);
         int titleHeight = item.ShowsDesktopTitle ? DesktopGroupTitleHeight : 0;
         Rectangle titleBounds = new Rectangle(e.Bounds.X + 2, e.Bounds.Y, e.Bounds.Width - 4, titleHeight);
         Rectangle contentBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + titleHeight, e.Bounds.Width, e.Bounds.Height - titleHeight);
 
         Color foreColor = selected ? Color.White : lb.ForeColor;
         Color shortcutColor = ShortcutColor;
-        if (item.IsIconic)
+        if (opacity < 1f)
         {
-            foreColor = IncrementColor(foreColor, multiplierOpacityDecrement);
-            shortcutColor = IncrementColor(shortcutColor, multiplierOpacityDecrement);
+            foreColor = IncrementColor(foreColor, opacity);
+            shortcutColor = IncrementColor(shortcutColor, opacity);
         }
 
         Brush contentBrush = selected
-            ? (item.IsIconic ? selectedIconicItemBrush : selectedItemBrush)
+            ? (!enabled ? selectedDisabledItemBrush : (item.IsIconic ? selectedIconicItemBrush : selectedItemBrush))
             : listBackgroundBrush;
 
         if (titleHeight > 0)
@@ -1620,7 +1629,7 @@ public partial class MainForm : Form
 
         int iconSize = contentBounds.Height - 4;
         Rectangle iconRect = new Rectangle(contentBounds.X + 2, contentBounds.Y + 2, iconSize, iconSize);
-        e.Graphics.DrawImage(item.OutIcon, iconRect);
+        DrawWindowIcon(e.Graphics, item, iconRect, enabled);
 
         int textX = iconRect.Right + 4;
         if (!string.IsNullOrEmpty(item.Shortcut))
@@ -1635,7 +1644,7 @@ public partial class MainForm : Form
 
         if (selected)
         {
-            Pen borderPen = item.IsIconic ? selectedIconicItemBorderPen : selectedItemBorderPen;
+            Pen borderPen = !enabled ? selectedDisabledItemBorderPen : (item.IsIconic ? selectedIconicItemBorderPen : selectedItemBorderPen);
             Rectangle borderRect = new Rectangle(contentBounds.X, contentBounds.Y, contentBounds.Width - 1, contentBounds.Height - 1);
             e.Graphics.DrawRectangle(borderPen, borderRect);
         }
@@ -1650,6 +1659,20 @@ public partial class MainForm : Form
             e.Graphics.FillEllipse(Brushes.White, new Rectangle(circleX, circleY, diameter, diameter));
             e.Graphics.SmoothingMode = previousSmoothingMode;
         }
+    }
+
+    internal static void DrawWindowIcon(Graphics graphics, WindowItem item, Rectangle bounds, bool enabled)
+    {
+        if (enabled)
+        {
+            graphics.DrawImage(item.OutIcon, bounds);
+            return;
+        }
+
+        using var attributes = new ImageAttributes();
+        attributes.SetColorMatrix(new ColorMatrix { Matrix33 = DisabledWindowOpacity - 0.2f });
+        graphics.DrawImage(item.Icon, bounds, 0, 0, item.Icon.Width, item.Icon.Height,
+            GraphicsUnit.Pixel, attributes);
     }
 
     private static Rectangle GetWindowTextBounds(Rectangle contentBounds, WindowItem item)
@@ -1874,6 +1897,7 @@ public partial class MainForm : Form
         var items = new List<WindowItem>();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
+        Func<string, bool> isBlocked = windowBlocks.GetMatcher();
 
         EnumWindows((hWnd, lParam) =>
         {
@@ -1901,6 +1925,7 @@ public partial class MainForm : Form
 
             StringBuilder sb = new StringBuilder(length + 1);
             GetWindowText(hWnd, sb, sb.Capacity);
+            string windowTitle = sb.ToString();
             var images = GetWindowIconImageEnhanced(hWnd);
 
             string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
@@ -1914,7 +1939,6 @@ public partial class MainForm : Form
                 if (existingPath is null)
                     windowsPaths[hWnd] = programPath;
 
-                string windowTitle = sb.ToString();
                 var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
                 if (matchedSetting is not null)
                 {
@@ -1934,9 +1958,9 @@ public partial class MainForm : Form
             items.Add(new WindowItem
             {
                 Handle = hWnd,
-                Blocks = windowBlocks,
+                Enabled = !isBlocked(windowTitle),
                 TypeWindow = GetTypeWindow(hWnd),
-                Title = sb.ToString(),
+                Title = windowTitle,
                 DesktopId = desktopId,
                 DesktopName = desktopName,
                 RenamedTitle = renamedTitleFetchResult,
@@ -2188,8 +2212,10 @@ public partial class MainForm : Form
         listBackgroundBrush.Dispose();
         selectedItemBrush.Dispose();
         selectedIconicItemBrush.Dispose();
+        selectedDisabledItemBrush.Dispose();
         selectedItemBorderPen.Dispose();
         selectedIconicItemBorderPen.Dispose();
+        selectedDisabledItemBorderPen.Dispose();
         shortcutFont.Dispose();
         desktopTitleFont.Dispose();
 
@@ -2200,14 +2226,8 @@ public partial class MainForm : Form
     {
         private Font? measuredTitleFont;
         private int measuredTitleWidth;
-        private bool enabled = true;
 
-        internal WindowBlocks? Blocks { get; set; }
-        public bool Enabled
-        {
-            get => enabled && !(Blocks?.IsBlocked(Title) ?? false);
-            set => enabled = value;
-        }
+        public bool Enabled { get; set; } = true;
 
         public required IntPtr Handle { get; set; }
         public required string Title
@@ -2253,14 +2273,7 @@ public partial class MainForm : Form
         #region Methods
         internal bool TryOpen(bool activate = true, Action? beforeOpen = null)
         {
-            if (!IsWindow(Handle) || !IsWindowVisible(Handle))
-                return false;
-
-            // Titles can change while the picker is open; never match the alias.
-            var title = new StringBuilder(GetWindowTextLength(Handle) + 1);
-            GetWindowText(Handle, title, title.Capacity);
-            Title = title.ToString();
-            if (!Enabled)
+            if (!Enabled || !IsWindow(Handle) || !IsWindowVisible(Handle))
                 return false;
 
             beforeOpen?.Invoke();

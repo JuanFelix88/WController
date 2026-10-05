@@ -22,6 +22,6 @@ Exemplo de conteúdo:
 
 Crie o arquivo caso não exista. Para atualizar, escreva a lista completa em um arquivo temporário na mesma pasta, feche-o e substitua `blocks.txt` atomicamente (por exemplo, `File.Replace` quando o destino já existe). Evite apagar o destino antes da substituição ou deixá-lo parcialmente escrito. Se houver vários escritores, coordene as atualizações para não perder regras de outro programa.
 
-Criação, alteração, renomeação/substituição e exclusão são detectadas automaticamente, com uma breve espera de aproximadamente 100 ms para agrupar eventos. Não é necessário reiniciar. Falhas temporárias de leitura preservam a última lista carregada e provocam novas tentativas.
+Criação, alteração, renomeação/substituição e exclusão são detectadas automaticamente, com uma breve espera de aproximadamente 100 ms para agrupar eventos. Não é necessário reiniciar. As regras são aplicadas na próxima listagem de janelas; o estado das janelas já listadas permanece fixo durante aquele ciclo de seleção. Falhas temporárias de leitura preservam a última lista carregada e provocam novas tentativas.
 
-Arquivo vazio ou ausente significa nenhum bloqueio. Remover uma regex libera os títulos correspondentes, desde que nenhuma outra regra os bloqueie. As regras afetam apenas novas tentativas de abrir/ativar; não fecham nem minimizam automaticamente janelas já abertas.
+Arquivo vazio ou ausente significa nenhum bloqueio na próxima listagem. Remover uma regex libera os títulos correspondentes nesse próximo ciclo, desde que nenhuma outra regra os bloqueie. As regras não fecham nem minimizam automaticamente janelas já abertas.
