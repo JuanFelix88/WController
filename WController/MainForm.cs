@@ -35,6 +35,7 @@ public partial class MainForm : Form
     const int MOD_SHIFT = 0x4;
     const int WM_HOTKEY = 0x0312;
     const int HOTKEY_ID = 9000;
+    const int WM_ACTIVATE_CYCLED_WINDOW = 0x8001;
     const Keys WINDOW_PICKER_KEY = Keys.Oemtilde;
     const int DesktopGroupTitleHeight = 22;
     const int PreviewUpdateDelayMilliseconds = 30;
@@ -134,10 +135,15 @@ public partial class MainForm : Form
 
     const int WH_KEYBOARD_LL = 13;
     const int WM_KEYDOWN = 0x0100;
+    const int WM_KEYUP = 0x0101;
     const int WM_SYSKEYDOWN = 0x0104;
-    const byte VK_APPS = 0x5D;
+    const int WM_SYSKEYUP = 0x0105;
+    const byte VK_MENU = 0x12;
     const byte VK_LWIN = 0x5B;
     const byte VK_RWIN = 0x5C;
+    const byte VK_APPS = 0x5D;
+    const byte VK_LMENU = 0xA4;
+    const byte VK_RMENU = 0xA5;
     const uint KEYEVENTF_KEYUP = 0x0002;
     const byte VK_BROWSER_SEARCH = 0xAA;
     const byte VK_LAUNCH_APP1 = 0xB6;
@@ -255,46 +261,33 @@ public partial class MainForm : Form
         PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
     }
 
-    private void FocusWindow(WindowItem window)
+    private bool ActivateWindow(WindowItem window, bool? singleWindow = null, int increments = 1, bool hidePicker = true)
     {
-        TryFocusWindow(window);
-    }
-
-    private bool TryFocusWindow(WindowItem window)
-    {
-        if (IsIconic(window.Handle))
-            ShowWindow(window.Handle, SW_RESTORE);
-
-        return SetForegroundWindow(window.Handle);
-    }
-
-    private void FocusInOneWindow(WindowItem window)
-    {
-        this.Hide();
-        foreach (WindowItem itemWindow in listBox1.Items.Cast<WindowItem>().Reverse())
+        bool focusAlone = singleWindow ?? (isOneWindowMode && !window.HighRelevance);
+        if (!window.TryOpen(beforeOpen: focusAlone ? () =>
         {
-            if (window == itemWindow) continue;
-            if (itemWindow == null) continue;
-            if (itemWindow.IsIconic) continue;
-            HideWindow(itemWindow);
-        }
-        FocusWindow(window);
+            Hide();
+            foreach (WindowItem other in listBox1.Items.Cast<WindowItem>().Reverse())
+            {
+                if (other != window && !other.IsIconic)
+                    HideWindow(other);
+            }
+        } : null))
+            return false;
 
-        if (listBox1.Items.Count > 0)
-        {
-            IncrementCount((WindowItem)listBox1.Items[0], window);
-        }
+        ResetQuickShortcutCycleIfDifferent(window);
+        if (increments > 0 && listBox1.Items.Count > 0)
+            IncrementCount((WindowItem)listBox1.Items[0], window, increments);
+        if (hidePicker)
+            Hide();
+        return true;
     }
 
     private void ShowWindow(WindowItem window)
     {
-        if (IsIconic(window.Handle))
-        {
-            ShowWindow(window.Handle, SW_RESTORE);
-        }
-        SetForegroundWindow(window.Handle);
+        if (!window.TryOpen()) return;
         SetForegroundWindow(this.Handle);
-        this.Show();
+        Show();
     }
 
     [DllImport("user32.dll")]
@@ -532,6 +525,7 @@ public partial class MainForm : Form
     private readonly Color TertiaryColor = Color.FromArgb(30, 76, 114);
     private readonly Color ShortcutColor = Color.FromArgb(180, 255, 180);
     private Hashtable windowsToIgnore = new Hashtable(10);
+    private readonly WindowBlocks windowBlocks = new WindowBlocks();
     private Dictionary<IntPtr, (Image Icon, Image IconIconic)> iconsWindows = new Dictionary<IntPtr, (Image Icon, Image IconIconic)>(400);
     private Hashtable windowsRenames = new Hashtable();
     private Dictionary<IntPtr, string> windowsShortcuts = new Dictionary<IntPtr, string>();
@@ -576,6 +570,7 @@ public partial class MainForm : Form
     private int mouseSelectionStep;
     private bool isLoadingTextDimmed;
     private bool isFormClosing;
+    private bool isWindowPickerCycleAdvanced;
 
     public MainForm()
     {
@@ -637,9 +632,7 @@ public partial class MainForm : Form
         {
             if (listBox1.SelectedItem is WindowItem item)
             {
-                ResetQuickShortcutCycleIfDifferent(item);
-                FocusWindow(item);
-                this.Hide();
+                ActivateWindow(item, singleWindow: false, increments: 0);
             }
         };
         listBox1.KeyDown += this.OnListBox1KeyDown;
@@ -1030,22 +1023,7 @@ public partial class MainForm : Form
         WindowItem? item = FindQuickShortcutTarget(items, input);
         if (item is null) return false;
 
-        if (e.Control)
-        {
-            FocusWindowWithControl(item);
-        }
-        else if (isOneWindowMode && !item.HighRelevance)
-        {
-            FocusInOneWindow(item);
-        }
-        else
-        {
-            FocusWindow(item);
-            if (listBox1.Items.Count > 0)
-                IncrementCount((WindowItem)listBox1.Items[0], item);
-        }
-
-        this.Hide();
+        ActivateWindow(item, singleWindow: e.Control ? !isOneWindowMode : (bool?)null);
         e.Handled = true;
         e.SuppressKeyPress = e.Control;
         return true;
@@ -1054,16 +1032,7 @@ public partial class MainForm : Form
     private void FocusWindowWithControl(WindowItem window)
     {
         // Ctrl inverts Single Window Mode, matching the existing Ctrl+Enter behavior.
-        if (isOneWindowMode)
-        {
-            FocusWindow(window);
-            if (listBox1.Items.Count > 0)
-                IncrementCount((WindowItem)listBox1.Items[0], window);
-        }
-        else
-        {
-            FocusInOneWindow(window);
-        }
+        ActivateWindow(window, singleWindow: !isOneWindowMode, hidePicker: !isOneWindowMode);
     }
 
     private static bool IsQuickShortcutInput(Keys keyCode)
@@ -1115,22 +1084,22 @@ public partial class MainForm : Form
             .ToList();
         var matchingHandles = new HashSet<IntPtr>(matchingWindows.Select(window => window.Handle));
 
-        Hide();
-
-        foreach (WindowItem window in desktopWindows)
+        if (!target.TryOpen(beforeOpen: () =>
         {
-            if (!matchingHandles.Contains(window.Handle) && IsWindow(window.Handle) && !IsIconic(window.Handle))
-                ShowWindow(window.Handle, SW_SHOWMINNOACTIVE);
-        }
+            Hide();
+            foreach (WindowItem window in desktopWindows)
+            {
+                if (!matchingHandles.Contains(window.Handle) && IsWindow(window.Handle) && !IsIconic(window.Handle))
+                    ShowWindow(window.Handle, SW_SHOWMINNOACTIVE);
+            }
 
-        foreach (WindowItem window in matchingWindows)
-        {
-            if (IsWindow(window.Handle) && IsIconic(window.Handle))
-                ShowWindow(window.Handle, SW_SHOWNOACTIVATE);
-        }
-
-        if (IsWindow(target.Handle))
-            FocusWindow(target);
+            foreach (WindowItem window in matchingWindows)
+            {
+                if (window != target)
+                    window.TryOpen(activate: false);
+            }
+        }))
+            return;
 
         if (items.Count > 0)
             IncrementCount(items[0], target);
@@ -1215,7 +1184,6 @@ public partial class MainForm : Form
         }
         if (e.KeyCode == Keys.Right && listBox1.SelectedItem is WindowItem windowToShow)
         {
-            windowToShow.IsIconic = false;
             ShowWindow(windowToShow);
             e.Handled = true;
             return true;
@@ -1241,26 +1209,7 @@ public partial class MainForm : Form
         }
         if (e.Shift && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem itemInforceSaltsIncrements)
         {
-            ResetQuickShortcutCycleIfDifferent(itemInforceSaltsIncrements);
-            int adderForClustering = 40;
-            if (isOneWindowMode && !itemInforceSaltsIncrements.HighRelevance)
-            {
-                FocusInOneWindow(itemInforceSaltsIncrements);
-                if (listBox1.Items.Count > 0)
-                {
-                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, adderForClustering - 1);
-                }
-            }
-            else
-            {
-                FocusWindow(itemInforceSaltsIncrements);
-                if (listBox1.Items.Count > 0)
-                {
-                    IncrementCount((WindowItem)listBox1.Items[0], itemInforceSaltsIncrements, adderForClustering);
-                }
-            }
-
-            this.Hide();
+            ActivateWindow(itemInforceSaltsIncrements, increments: 40);
             return true;
         }
         if (e.Control && e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem windowToFocusWithControl)
@@ -1271,43 +1220,22 @@ public partial class MainForm : Form
         }
         if (e.KeyCode == Keys.Space && !e.Shift && !e.Control && !e.Alt && listBox1.SelectedItem is WindowItem itemSpace)
         {
-            ResetQuickShortcutCycleIfDifferent(itemSpace);
-            if (isOneWindowMode && !itemSpace.HighRelevance)
-            {
-                FocusInOneWindow(itemSpace);
-            }
-            else
-            {
-                FocusWindow(itemSpace);
-                if (listBox1.Items.Count > 0)
-                {
-                    IncrementCount((WindowItem)listBox1.Items[0], itemSpace);
-                }
-            }
-
-            this.Hide();
+            ActivateWindow(itemSpace);
             return true;
         }
-        if (e.KeyCode == Keys.Enter && listBox1.SelectedItem is WindowItem item)
-        {
-            ResetQuickShortcutCycleIfDifferent(item);
-            if (isOneWindowMode && !item.HighRelevance)
-            {
-                FocusInOneWindow(item);
-            }
-            else
-            {
-                FocusWindow(item);
-                if (listBox1.Items.Count > 0)
-                {
-                    IncrementCount((WindowItem)listBox1.Items[0], item);
-                }
-            }
-
-            this.Hide();
+        if (e.KeyCode == Keys.Enter && ActivateSelectedWindow())
             return true;
-        }
+
         return false;
+    }
+
+    private bool ActivateSelectedWindow()
+    {
+        if (listBox1.SelectedItem is not WindowItem item)
+            return false;
+
+        ActivateWindow(item);
+        return true;
     }
 
     private bool TryHandleWindowRemoval(KeyEventArgs e)
@@ -1515,6 +1443,7 @@ public partial class MainForm : Form
     {
         if (!Visible)
         {
+            isWindowPickerCycleAdvanced = false;
             loadingBlinkTimer.Stop();
             isLoadingTextDimmed = false;
             mouseSelectionTimer.Stop();
@@ -2005,6 +1934,7 @@ public partial class MainForm : Form
             items.Add(new WindowItem
             {
                 Handle = hWnd,
+                Blocks = windowBlocks,
                 TypeWindow = GetTypeWindow(hWnd),
                 Title = sb.ToString(),
                 DesktopId = desktopId,
@@ -2042,17 +1972,7 @@ public partial class MainForm : Form
 
     internal bool ActivateWindowFromSearch(WindowItem window)
     {
-        if (!IsWindow(window.Handle) || !IsWindowVisible(window.Handle))
-            return false;
-
-        ResetQuickShortcutCycleIfDifferent(window);
-        if (!TryFocusWindow(window))
-            return false;
-
-        if (listBox1.Items.Count > 0 && listBox1.Items[0] is WindowItem activeWindow)
-            IncrementCount(activeWindow, window);
-
-        return true;
+        return ActivateWindow(window, singleWindow: false, hidePicker: false);
     }
 
     private bool TryGetWindowDesktop(IntPtr hWnd, out Guid desktopId, out string desktopName)
@@ -2110,8 +2030,7 @@ public partial class MainForm : Form
     {
         if (listBox1.SelectedItem is WindowItem item)
         {
-            ResetQuickShortcutCycleIfDifferent(item);
-            SetForegroundWindow(item.Handle);
+            ActivateWindow(item, singleWindow: false, increments: 0, hidePicker: false);
         }
     }
 
@@ -2129,12 +2048,26 @@ public partial class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == WM_ACTIVATE_CYCLED_WINDOW)
+        {
+            if (Visible)
+                ActivateSelectedWindow();
+            return;
+        }
+
         if (m.Msg == WM_HOTKEY)
         {
             int hotkeyId = m.WParam.ToInt32();
             if (hotkeyId == HOTKEY_ID)
             {
+                bool advancesExistingSelection = Visible &&
+                    isDesktopGroupedView == isDesktopGroupingHotkeyInverted &&
+                    !isCurrentDesktopOnlyView;
+
                 ToggleWindowList(isDesktopGroupingHotkeyInverted, false);
+                if (advancesExistingSelection)
+                    isWindowPickerCycleAdvanced = true;
+
                 if (isMouseSelectionMode)
                     PositionCursorForMouseSelection();
             }
@@ -2200,11 +2133,21 @@ public partial class MainForm : Form
             int vkCode = Marshal.ReadInt32(lParam);
 
             bool isKeyDown = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
-            bool isKeyUp = !isKeyDown;
+            bool isKeyUp = wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP;
 
             if (vkCode == VK_LWIN || vkCode == VK_RWIN)
             {
-                isWinKeyDown = isKeyDown;
+                if (isKeyDown)
+                    isWinKeyDown = true;
+                else if (isKeyUp)
+                    isWinKeyDown = false;
+            }
+
+            bool isAltKey = vkCode == VK_MENU || vkCode == VK_LMENU || vkCode == VK_RMENU;
+            if (isKeyUp && isAltKey && isWindowPickerCycleAdvanced)
+            {
+                isWindowPickerCycleAdvanced = false;
+                PostMessage(Handle, WM_ACTIVATE_CYCLED_WINDOW, IntPtr.Zero, IntPtr.Zero);
             }
 
             // Copilot key configured as Search mode (VK_BROWSER_SEARCH, VK_LAUNCH_APP1, VK_LAUNCH_APP2)
@@ -2241,6 +2184,7 @@ public partial class MainForm : Form
         previewUpdateTimer.Dispose();
         mouseSelectionTimer.Dispose();
         loadingBlinkTimer.Dispose();
+        windowBlocks.Dispose();
         listBackgroundBrush.Dispose();
         selectedItemBrush.Dispose();
         selectedIconicItemBrush.Dispose();
@@ -2256,6 +2200,14 @@ public partial class MainForm : Form
     {
         private Font? measuredTitleFont;
         private int measuredTitleWidth;
+        private bool enabled = true;
+
+        internal WindowBlocks? Blocks { get; set; }
+        public bool Enabled
+        {
+            get => enabled && !(Blocks?.IsBlocked(Title) ?? false);
+            set => enabled = value;
+        }
 
         public required IntPtr Handle { get; set; }
         public required string Title
@@ -2299,6 +2251,25 @@ public partial class MainForm : Form
         public bool IsOriginalTitle => string.IsNullOrEmpty(RenamedTitle) && string.IsNullOrEmpty(Shortcut);
 
         #region Methods
+        internal bool TryOpen(bool activate = true, Action? beforeOpen = null)
+        {
+            if (!IsWindow(Handle) || !IsWindowVisible(Handle))
+                return false;
+
+            // Titles can change while the picker is open; never match the alias.
+            var title = new StringBuilder(GetWindowTextLength(Handle) + 1);
+            GetWindowText(Handle, title, title.Capacity);
+            Title = title.ToString();
+            if (!Enabled)
+                return false;
+
+            beforeOpen?.Invoke();
+            if (MainForm.IsIconic(Handle))
+                MainForm.ShowWindow(Handle, activate ? SW_RESTORE : SW_SHOWNOACTIVATE);
+            IsIconic = MainForm.IsIconic(Handle);
+            return !activate || SetForegroundWindow(Handle);
+        }
+
         public string ToStringWithoutShortcut()
         {
             return !string.IsNullOrEmpty(RenamedTitle) ? RenamedTitle! : Title;
