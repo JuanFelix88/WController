@@ -134,6 +134,7 @@ public partial class SearchItemsForm : Form
 
     private void OnPluginCalledByShortcut(External.Plugin plugin)
     {
+        if (windowManager.IsPositionalModeActive) return;
         searchRequestVersion++;
         windowSearchItems = null;
         if (!this.Visible) this.Show();
@@ -532,6 +533,7 @@ public partial class SearchItemsForm : Form
     {
         if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID)
         {
+            if (windowManager.IsPositionalModeActive) return;
             if (this.Visible)
             {
                 SelectNextItem();

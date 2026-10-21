@@ -154,6 +154,8 @@ public partial class MainForm : Form
     private IntPtr keyboardHookId = IntPtr.Zero;
     private LowLevelKeyboardProc? keyboardHookProc;
     private bool isWinKeyDown = false;
+    private readonly PositionalManager positionalManager;
+    internal bool IsPositionalModeActive => positionalManager?.IsActive == true;
 
     [DllImport("user32.dll")]
     static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -624,7 +626,6 @@ public partial class MainForm : Form
         ComputeIgnoreWindows();
         LoadWindowList();
         RegisterHotKey(this.Handle, HOTKEY_ID, MOD_ALT, WINDOW_PICKER_KEY);
-        InstallKeyboardHook();
         //this.KeyPreview = true; // importante para o formulário capturar teclas antes dos controles
         //this.KeyDown += this.MainForm_KeyDown;
 
@@ -650,6 +651,13 @@ public partial class MainForm : Form
         temporaryTimerChecker.Start();
 
         searchItemsForm = new SearchItemsForm(this);
+        positionalManager = new PositionalManager(this, () =>
+        {
+            isWindowPickerCycleAdvanced = false;
+            Hide();
+            searchItemsForm.Hide();
+        });
+        InstallKeyboardHook();
 
         // Ctrl+I opens agent chat
         this.KeyPreview = true;
@@ -2074,13 +2082,14 @@ public partial class MainForm : Form
     {
         if (m.Msg == WM_ACTIVATE_CYCLED_WINDOW)
         {
-            if (Visible)
+            if (Visible && !IsPositionalModeActive)
                 ActivateSelectedWindow();
             return;
         }
 
         if (m.Msg == WM_HOTKEY)
         {
+            if (IsPositionalModeActive) return;
             int hotkeyId = m.WParam.ToInt32();
             if (hotkeyId == HOTKEY_ID)
             {
@@ -2138,6 +2147,8 @@ public partial class MainForm : Form
         using (var curModule = curProcess.MainModule)
         {
             keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, keyboardHookProc, GetModuleHandle(curModule.ModuleName), 0);
+            if (keyboardHookId == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Unable to install the global keyboard hook.");
         }
     }
 
@@ -2158,6 +2169,10 @@ public partial class MainForm : Form
 
             bool isKeyDown = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
             bool isKeyUp = wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP;
+            int flags = Marshal.ReadInt32(lParam, 8);
+            if (positionalManager?.HandleKeyboardEvent((Keys)vkCode, isKeyDown, isKeyUp,
+                (flags & 0x20) != 0, (flags & 0x10) != 0, (uint)Marshal.ReadInt32(lParam, 4)) == true)
+                return (IntPtr)1;
 
             if (vkCode == VK_LWIN || vkCode == VK_RWIN)
             {
@@ -2204,6 +2219,7 @@ public partial class MainForm : Form
         CloseCurrentPreview();
         UnregisterHotKey(this.Handle, HOTKEY_ID);
         UninstallKeyboardHook();
+        positionalManager.Dispose();
 
         previewUpdateTimer.Dispose();
         mouseSelectionTimer.Dispose();

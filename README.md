@@ -43,10 +43,17 @@ Preview:
 ## 🔧 Configuration
 
 ### Hotkeys
-WController supports customizable global hotkeys:
-- Default hotkey combinations use `Ctrl+Alt` modifiers
-- Configure hotkeys through the main interface
-- Hotkeys work even when WController is minimized
+Global shortcuts work even when WController is hidden:
+- **Alt+F1**: enter positional window navigation. Release Alt, use the arrow keys or type a window-title prefix to move the highlight, Enter to focus, or Esc to cancel.
+- **Alt+Oemtilde**: open/cycle the window picker (the key's symbol depends on the keyboard layout).
+- **Alt+Space**: open/cycle search.
+- **Ctrl+Alt+G / Ctrl+Alt+P**: Google/prompts search, when the corresponding plugins are installed.
+
+Positional navigation uses non-minimized application windows on the current virtual desktop, across monitors. It prioritizes windows overlapping the selected window's vertical span for Left/Right, or horizontal span for Up/Down, then chooses the nearest center. Diagonals are a fallback when no aligned candidate exists; navigation does not wrap at the edge. Overlapping windows remain eligible. The rounded, hollow border uses the Windows accent color with per-pixel alpha antialiasing and does not change application colors or focus until Enter. External focus changes, closing a window outside the mode, or minimizing the selection cancel the mode. Keyboard input is consumed by the mode, not sent to the selected application. Windows may restrict interception or activation of elevated applications and secure desktops.
+
+Typing searches native Windows titles by prefix, ignoring case and diacritics; aliases/renames are not used. The first matching window in Z-order is highlighted. The query appears in a small top-left tab integrated into the border, with black or white text chosen for maximum WCAG contrast. Backspace removes the last character; Ctrl+Backspace clears the entire query and pending accent without leaving the mode or changing the selection. Clearing the query removes the tab. With no match, the previous selection remains. Arrow keys still navigate spatially; Enter confirms and Esc exits.
+
+Unmodified Del requests normal window closure (`WM_CLOSE`), never process termination. After the window closes, the nearest remaining eligible window is highlighted and the mode continues; it exits if none remain. A confirmation dialog taking focus exits the mode so it can be answered normally. Applications may refuse the request. Hold-to-repeat is disabled for Del: release and press again to close another window or retry.
 
 ### Window Management
 - **Minimize/Restore**: Control window states programmatically
