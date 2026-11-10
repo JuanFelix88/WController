@@ -361,10 +361,11 @@ public partial class MainForm : Form
     /// <exception cref="InvalidOperationException">Lançada quando o desktop da janela não pode ser encontrado.</exception>
     public string GetVirtualDesktopName(IntPtr hWnd)
     {
-        return GetVirtualDesktopName(hWnd, out _);
+        bool cacheRefreshed = false;
+        return GetVirtualDesktopName(hWnd, null, ref cacheRefreshed, out _, out _);
     }
 
-    private string GetVirtualDesktopName(IntPtr hWnd, out Guid desktopId)
+    private string GetVirtualDesktopName(IntPtr hWnd, IVirtualDesktopManager? manager, ref bool cacheRefreshed, out Guid desktopId, out bool isOnAllDesktops)
     {
         if (hWnd == IntPtr.Zero)
             throw new ArgumentNullException(nameof(hWnd));
@@ -372,15 +373,27 @@ public partial class MainForm : Form
         if (!IsWindow(hWnd))
             throw new ArgumentException("O handle informado não representa uma janela válida.", nameof(hWnd));
 
-        desktopId = GetWindowDesktopId(hWnd);
+        desktopId = GetWindowDesktopId(hWnd, manager);
+        isOnAllDesktops = false;
 
         if (TryGetVirtualDesktopName(desktopId, out string desktopName))
             return desktopName;
 
-        RefreshVirtualDesktopCache();
+        if (!cacheRefreshed)
+        {
+            RefreshVirtualDesktopCache();
+            cacheRefreshed = true;
+            if (TryGetVirtualDesktopName(desktopId, out desktopName))
+                return desktopName;
+        }
 
-        if (TryGetVirtualDesktopName(desktopId, out desktopName))
-            return desktopName;
+        // Pinned windows can have a shell-owned desktop ID absent from the desktop list.
+        // Do not interpret failed COM calls or an empty ID as a pinned window.
+        if (desktopId != Guid.Empty && IsOnCurrentVirtualDesktop(hWnd, manager))
+        {
+            isOnAllDesktops = true;
+            return "All desktops";
+        }
 
         throw new InvalidOperationException("A janela não está associada a um desktop virtual identificável.");
     }
@@ -422,12 +435,12 @@ public partial class MainForm : Form
         }
     }
 
-    private static Guid GetWindowDesktopId(IntPtr hWnd)
+    private static Guid GetWindowDesktopId(IntPtr hWnd, IVirtualDesktopManager? manager = null)
     {
-        IVirtualDesktopManager? manager = null;
+        bool ownsManager = manager is null;
         try
         {
-            manager = (IVirtualDesktopManager)new VirtualDesktopManager();
+            manager ??= (IVirtualDesktopManager)new VirtualDesktopManager();
             int hResult = manager.GetWindowDesktopId(hWnd, out Guid desktopId);
             if (hResult != 0)
                 Marshal.ThrowExceptionForHR(hResult);
@@ -436,7 +449,26 @@ public partial class MainForm : Form
         }
         finally
         {
-            if (manager is not null && Marshal.IsComObject(manager))
+            if (ownsManager && manager is not null && Marshal.IsComObject(manager))
+                Marshal.ReleaseComObject(manager);
+        }
+    }
+
+    private static bool IsOnCurrentVirtualDesktop(IntPtr hWnd, IVirtualDesktopManager? manager = null)
+    {
+        bool ownsManager = manager is null;
+        try
+        {
+            manager ??= (IVirtualDesktopManager)new VirtualDesktopManager();
+            return manager.IsWindowOnCurrentVirtualDesktop(hWnd, out int current) >= 0 && current != 0;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (ownsManager && manager is not null && Marshal.IsComObject(manager))
                 Marshal.ReleaseComObject(manager);
         }
     }
@@ -1092,7 +1124,9 @@ public partial class MainForm : Form
         char shortcutKey)
     {
         List<WindowItem> desktopWindows = items
-            .Where(window => window.DesktopId == target.DesktopId)
+            .Where(window => target.IsOnAllDesktops
+                ? IsOnCurrentVirtualDesktop(window.Handle)
+                : window.IsOnAllDesktops || window.DesktopId == target.DesktopId)
             .ToList();
         List<WindowItem> matchingWindows = desktopWindows
             .Where(window => GetQuickShortcutKey(window) == shortcutKey)
@@ -1898,89 +1932,93 @@ public partial class MainForm : Form
             listBox1.DrawMode = requestedDrawMode;
 
         IntPtr foregroundWindow = GetForegroundWindow();
-        Guid? desktopFilter = null;
-        if (currentDesktopOnly && TryGetWindowDesktop(foregroundWindow, out Guid foregroundDesktopId, out _))
-            desktopFilter = foregroundDesktopId;
 
         var items = new List<WindowItem>();
         IntPtr? firstHandle = null;
         var winSettings = WinSettingsStore.LoadFromCache();
         Func<string, bool> isBlocked = windowBlocks.GetMatcher();
 
-        EnumWindows((hWnd, lParam) =>
+        bool desktopCacheRefreshed = false;
+        IVirtualDesktopManager? desktopManager = null;
+        try
         {
-            if (hWnd == this.Handle || hWnd == IntPtr.Zero || GetTypeWindow(hWnd) == 0 ||
-                windowsToIgnore.Contains(hWnd) || !IsWindow(hWnd) || IsOtherWindow(hWnd) || !IsWindowVisible(hWnd))
-                return true;
-
-            int length = GetWindowTextLength(hWnd);
-            if (length == 0) return true;
-
-            if (!TryGetWindowDesktop(hWnd, out Guid desktopId, out string desktopName))
-                return true;
-
-            if (currentDesktopOnly)
+            desktopManager = (IVirtualDesktopManager)new VirtualDesktopManager();
+            EnumWindows((hWnd, lParam) =>
             {
-                if (desktopFilter is null)
-                    desktopFilter = desktopId;
-                else if (desktopId != desktopFilter.Value)
+                if (hWnd == this.Handle || hWnd == IntPtr.Zero || GetTypeWindow(hWnd) == 0 ||
+                    windowsToIgnore.Contains(hWnd) || !IsWindow(hWnd) || IsOtherWindow(hWnd) || !IsWindowVisible(hWnd))
                     return true;
-            }
 
-            int countReferences = int.MaxValue;
-            if (firstHandle == null) firstHandle = hWnd;
-            else countReferences = CountWindowReferences(firstHandle.Value, hWnd);
+                int length = GetWindowTextLength(hWnd);
+                if (length == 0) return true;
 
-            StringBuilder sb = new StringBuilder(length + 1);
-            GetWindowText(hWnd, sb, sb.Capacity);
-            string windowTitle = sb.ToString();
-            var images = GetWindowIconImageEnhanced(hWnd);
+                if (!TryGetWindowDesktop(hWnd, desktopManager, ref desktopCacheRefreshed, out Guid desktopId, out string desktopName, out bool isOnAllDesktops))
+                    return true;
 
-            string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
-            string? shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
-            if (shortcut is null)
-            {
-                string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
-                    ? existingPath
-                    : WinHelper.GetPathFromHandle(hWnd);
+                if (currentDesktopOnly && !isOnAllDesktops && !IsOnCurrentVirtualDesktop(hWnd, desktopManager))
+                    return true;
 
-                if (existingPath is null)
-                    windowsPaths[hWnd] = programPath;
+                int countReferences = int.MaxValue;
+                if (firstHandle == null) firstHandle = hWnd;
+                else countReferences = CountWindowReferences(firstHandle.Value, hWnd);
 
-                var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
-                if (matchedSetting is not null)
+                StringBuilder sb = new StringBuilder(length + 1);
+                GetWindowText(hWnd, sb, sb.Capacity);
+                string windowTitle = sb.ToString();
+                var images = GetWindowIconImageEnhanced(hWnd);
+
+                string? renamedTitleFetchResult = windowsRenames.ContainsKey(hWnd) ? (string)windowsRenames[hWnd] : null;
+                string? shortcut = windowsShortcuts.ContainsKey(hWnd) ? windowsShortcuts[hWnd] : null;
+                if (shortcut is null)
                 {
-                    shortcut = matchedSetting.Shortcut;
-                    if (!string.IsNullOrEmpty(matchedSetting.IconPath))
+                    string programPath = windowsPaths.TryGetValue(hWnd, out string? existingPath)
+                        ? existingPath
+                        : WinHelper.GetPathFromHandle(hWnd);
+
+                    if (existingPath is null)
+                        windowsPaths[hWnd] = programPath;
+
+                    var matchedSetting = winSettings.FirstOrDefault(setting => setting.Matches(windowTitle, programPath));
+                    if (matchedSetting is not null)
                     {
-                        var customIcon = Util.IconCache.GetIcon(matchedSetting.IconPath);
-                        if (customIcon is not null)
+                        shortcut = matchedSetting.Shortcut;
+                        if (!string.IsNullOrEmpty(matchedSetting.IconPath))
                         {
-                            images.Icon = customIcon;
-                            images.IconIconic = customIcon;
+                            var customIcon = Util.IconCache.GetIcon(matchedSetting.IconPath);
+                            if (customIcon is not null)
+                            {
+                                images.Icon = customIcon;
+                                images.IconIconic = customIcon;
+                            }
                         }
                     }
                 }
-            }
 
-            items.Add(new WindowItem
-            {
-                Handle = hWnd,
-                Enabled = !isBlocked(windowTitle),
-                TypeWindow = GetTypeWindow(hWnd),
-                Title = windowTitle,
-                DesktopId = desktopId,
-                DesktopName = desktopName,
-                RenamedTitle = renamedTitleFetchResult,
-                Icon = images.Icon,
-                IconIconic = images.IconIconic,
-                IsIconic = IsIconic(hWnd),
-                Shortcut = shortcut ?? string.Empty,
-                CountReferences = countReferences
-            });
+                items.Add(new WindowItem
+                {
+                    Handle = hWnd,
+                    Enabled = !isBlocked(windowTitle),
+                    TypeWindow = GetTypeWindow(hWnd),
+                    Title = windowTitle,
+                    DesktopId = desktopId,
+                    IsOnAllDesktops = isOnAllDesktops,
+                    DesktopName = desktopName,
+                    RenamedTitle = renamedTitleFetchResult,
+                    Icon = images.Icon,
+                    IconIconic = images.IconIconic,
+                    IsIconic = IsIconic(hWnd),
+                    Shortcut = shortcut ?? string.Empty,
+                    CountReferences = countReferences
+                });
 
-            return true;
-        }, IntPtr.Zero);
+                return true;
+            }, IntPtr.Zero);
+        }
+        finally
+        {
+            if (desktopManager is not null && Marshal.IsComObject(desktopManager))
+                Marshal.ReleaseComObject(desktopManager);
+        }
 
         UpdateWindowRelevance(items);
         List<WindowItem> orderedItems = groupByDesktop
@@ -2007,12 +2045,13 @@ public partial class MainForm : Form
         return ActivateWindow(window, singleWindow: false, hidePicker: false);
     }
 
-    private bool TryGetWindowDesktop(IntPtr hWnd, out Guid desktopId, out string desktopName)
+    private bool TryGetWindowDesktop(IntPtr hWnd, IVirtualDesktopManager? manager, ref bool cacheRefreshed, out Guid desktopId, out string desktopName, out bool isOnAllDesktops)
     {
         desktopId = Guid.Empty;
+        isOnAllDesktops = false;
         try
         {
-            desktopName = GetVirtualDesktopName(hWnd, out desktopId);
+            desktopName = GetVirtualDesktopName(hWnd, manager, ref cacheRefreshed, out desktopId, out isOnAllDesktops);
             return true;
         }
         catch
@@ -2256,6 +2295,7 @@ public partial class MainForm : Form
             }
         }
         public required Guid DesktopId { get; set; }
+        public bool IsOnAllDesktops { get; set; }
         public required string DesktopName { get; set; }
         public required int TypeWindow { get; set; }
         public required int CountReferences { get; set; }
