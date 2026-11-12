@@ -2076,13 +2076,13 @@ public partial class MainForm : Form
         if (items.Count == 0) return new List<WindowItem>();
 
         WindowItem activeWindow = items.FirstOrDefault(item => item.Handle == foregroundWindow) ?? items[0];
-        var orderedItems = new List<WindowItem> { activeWindow };
-        orderedItems.AddRange(items
-            .Where(item => item != activeWindow)
-            .OrderBy(item => string.Equals(item.DesktopName, activeWindow.DesktopName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+        return items
+            .OrderBy(item => !activeWindow.IsOnAllDesktops && item.IsOnAllDesktops)
+            .ThenBy(item => item == activeWindow ? 0 : 1)
+            .ThenBy(item => string.Equals(item.DesktopName, activeWindow.DesktopName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ThenBy(item => item.DesktopName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(item => item.TypeWindow));
-        return orderedItems;
+            .ThenBy(item => item.TypeWindow)
+            .ToList();
     }
 
     private static void MarkDesktopGroupTitles(IReadOnlyList<WindowItem> items, bool groupByDesktop)
