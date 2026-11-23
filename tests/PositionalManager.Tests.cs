@@ -174,7 +174,9 @@ internal static class PositionalManagerTests
             Assert(ring.GetPixel(0, 0).A == 0, "Outer corners are transparent");
             Assert(ring.GetPixel(150, 1).A == 255, "Top border opaque");
             Assert(ring.GetPixel(1, 100).A == 255, "Side border opaque");
-            Assert(ring.GetPixel(150, 100).A == 0, "Window content stays transparent");
+            Assert(ring.GetPixel(150, 100).A == 38, "Window content has 15% overlay");
+            Color center = ring.GetPixel(150, 100);
+            Assert(Math.Abs(center.R - Color.DodgerBlue.R) <= 7 && Math.Abs(center.G - Color.DodgerBlue.G) <= 7 && Math.Abs(center.B - Color.DodgerBlue.B) <= 7, "Overlay uses the border color");
             bool fractional = false;
             for (int y = 0; y < 15; y++)
                 for (int x = 0; x < 15; x++)
@@ -189,13 +191,13 @@ internal static class PositionalManagerTests
         {
             Assert(withQuery.GetPixel(15, 12).A == 255, "Query tab fills top-left area");
             Assert(withQuery.GetPixel(0, 0).A == 0, "Query tab preserves rounded outer corner");
-            Assert(withQuery.GetPixel(150, 100).A == 0, "Query tab does not fill window content");
+            Assert(withQuery.GetPixel(150, 100).A == 38, "Query tab preserves the content overlay");
         }
         using (Bitmap tiny = PositionalManager.RenderHighlight(new Size(8, 6), 3, 10, Rectangle.Empty, Color.Blue, "", font))
             Assert(tiny.GetPixel(4, 3).A == 255, "Small window bitmap remains valid");
         using (Bitmap scaled = PositionalManager.RenderHighlight(new Size(600, 400), 6, 20, new Rectangle(0, 0, 200, 52),
             Color.Blue, "query", font, 192))
-            Assert(scaled.GetPixel(30, 24).A == 255 && scaled.GetPixel(300, 200).A == 0, "DPI-scaled tab and transparent center");
+            Assert(scaled.GetPixel(30, 24).A == 255 && scaled.GetPixel(300, 200).A == 38, "DPI-scaled tab and content overlay");
 
         double Luminance(Color color)
         {

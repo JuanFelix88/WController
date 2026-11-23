@@ -7,7 +7,7 @@ msbuild tests\PositionalManager.Tests.csproj /p:Configuration=Debug /v:minimal
 tests\bin\Debug\PositionalManager.Tests.exe
 ```
 
-The default run checks 82 cases: spatial navigation/alignment, nearest-window replacement after close, prefix matching (case, diacritics, decomposed Unicode, native-title-only lookup and Z-order), character/dead-key editing, antialiased bitmap alpha (opaque ring, transparent center, fractional-alpha curves), query-tab layout, DPI scaling, and WCAG text contrast.
+The default run checks spatial navigation/alignment, nearest-window replacement after close, prefix matching (case, diacritics, decomposed Unicode, native-title-only lookup and Z-order), character/dead-key editing, antialiased bitmap alpha (opaque ring, 15% overlay, fractional-alpha curves), query-tab layout, DPI scaling, and WCAG text contrast.
 
 Optional desktop integration:
 

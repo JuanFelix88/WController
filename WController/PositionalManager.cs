@@ -261,7 +261,7 @@ internal sealed class PositionalManager : IDisposable
         selected = foreground;
         border ??= new HighlightBorder();
         border.BackColor = GetAccentColor();
-        border.ShowBorder(bounds, searchText + pendingAccent);
+        border.ShowBorder(bounds, searchText + pendingAccent, GetDpiForWindow(selected));
         refreshTimer.Start();
     }
 
@@ -281,7 +281,7 @@ internal sealed class PositionalManager : IDisposable
             Cancel();
             return;
         }
-        border?.ShowBorder(targetBounds, searchText + pendingAccent);
+        border?.ShowBorder(targetBounds, searchText + pendingAccent, GetDpiForWindow(selected));
     }
 
     // Prefer overlap on the perpendicular axis (same row/column), then distance.
@@ -393,7 +393,7 @@ internal sealed class PositionalManager : IDisposable
             Cancel();
             return;
         }
-        border?.ShowBorder(bounds, searchText + pendingAccent);
+        border?.ShowBorder(bounds, searchText + pendingAccent, GetDpiForWindow(selected));
     }
 
     private void Confirm()
@@ -522,6 +522,8 @@ internal sealed class PositionalManager : IDisposable
             {
                 using var hole = RoundedPath(new RectangleF(thickness + 0.5f, thickness + 0.5f,
                     size.Width - thickness * 2 - 1, size.Height - thickness * 2 - 1), Math.Max(0, radius - thickness));
+                using var overlay = new SolidBrush(Color.FromArgb(38, accent));
+                graphics.FillPath(overlay, hole);
                 hole.Reverse();
                 shape.AddPath(hole, false);
             }
@@ -583,10 +585,8 @@ internal sealed class PositionalManager : IDisposable
             }
         }
 
-        internal void ShowBorder(Rectangle bounds, string query)
+        internal void ShowBorder(Rectangle bounds, string query, uint nextDpi)
         {
-            Bounds = bounds;
-            uint nextDpi = GetDpiForWindow(Handle);
             if (renderedSize != bounds.Size || Text != query || nextDpi != dpi || renderedColor != BackColor)
             {
                 dpi = nextDpi;
@@ -596,16 +596,17 @@ internal sealed class PositionalManager : IDisposable
                 {
                     using Graphics graphics = CreateGraphics();
                     SizeF measured = graphics.MeasureString(query, queryFont, int.MaxValue, StringFormat.GenericTypographic);
-                    queryBounds = new Rectangle(0, 0, Math.Min(Math.Max(1, Width - Scale(3)), (int)Math.Ceiling(measured.Width) + Scale(12)),
-                        Math.Min(Height, (int)Math.Ceiling(measured.Height) + Scale(8)));
+                    queryBounds = new Rectangle(0, 0, Math.Min(Math.Max(1, bounds.Width - Scale(3)), (int)Math.Ceiling(measured.Width) + Scale(12)),
+                        Math.Min(bounds.Height, (int)Math.Ceiling(measured.Height) + Scale(8)));
                 }
                 using Bitmap image = RenderHighlight(bounds.Size, Scale(3), Scale(10), queryBounds, BackColor, query, queryFont, dpi);
                 Upload(image, bounds.Location);
                 renderedSize = bounds.Size;
                 renderedColor = BackColor;
             }
+            else if (Location != bounds.Location)
+                SetWindowPos(Handle, new IntPtr(-1), bounds.X, bounds.Y, 0, 0, 0x1 | 0x10);
             if (!Visible) Show();
-            SetWindowPos(Handle, new IntPtr(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x10 | 0x40);
         }
 
         private int Scale(int pixels) => Math.Max(1, (int)Math.Round(pixels * dpi / 96.0));
